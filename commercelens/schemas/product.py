@@ -61,4 +61,6 @@ class ProductExtractionRequest(BaseModel):
     url: HttpUrl | None = None
     html: str | None = None
     render: bool = False
+    screenshot_path: str | None = None
+    html_snapshot_path: str | None = None
     llm_fallback: bool = False
