@@ -4,8 +4,9 @@ from fastapi import FastAPI, HTTPException
 
 from commercelens.core.crawler import CatalogCrawlResult, crawl_catalog
 from commercelens.core.fetcher import FetchError, fetch_html
-from commercelens.extractors.listing import extract_listing_from_html
-from commercelens.extractors.product import extract_product_from_html
+from commercelens.core.renderer import RenderError
+from commercelens.extractors.listing import extract_listing, extract_listing_from_html
+from commercelens.extractors.product import extract_product, extract_product_from_html
 from commercelens.schemas.listing import (
     CatalogCrawlRequest,
     ListingExtractionRequest,
@@ -16,25 +17,19 @@ from commercelens.schemas.product import ProductExtractionRequest, ProductExtrac
 app = FastAPI(
     title="CommerceLens API",
     description="Product, catalog, and price intelligence extraction for developers.",
-    version="0.2.0",
+    version="0.3.0",
 )
 
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "service": "commercelens", "version": "0.2.0"}
+    return {"status": "ok", "service": "commercelens", "version": "0.3.0"}
 
 
 @app.post("/v1/extract/product", response_model=ProductExtractionResult)
 def extract_product_endpoint(request: ProductExtractionRequest) -> ProductExtractionResult:
     if not request.url and not request.html:
         raise HTTPException(status_code=400, detail="Provide either 'url' or 'html'.")
-
-    if request.render:
-        raise HTTPException(
-            status_code=501,
-            detail="Browser rendering is planned for v0.3. Use render=false for now.",
-        )
 
     if request.llm_fallback:
         raise HTTPException(
@@ -43,16 +38,27 @@ def extract_product_endpoint(request: ProductExtractionRequest) -> ProductExtrac
         )
 
     url = str(request.url) if request.url else None
-    html = request.html
 
-    if not html and url:
-        try:
+    try:
+        if request.render:
+            if not url:
+                raise HTTPException(status_code=400, detail="render=true requires a URL.")
+            return extract_product(
+                url,
+                render=True,
+                screenshot_path=request.screenshot_path,
+                html_snapshot_path=request.html_snapshot_path,
+            )
+
+        html = request.html
+        if not html and url:
             html = fetch_html(url)
-        except FetchError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-    assert html is not None
-    return extract_product_from_html(html, url=url)
+        assert html is not None
+        return extract_product_from_html(html, url=url)
+    except FetchError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except RenderError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
 
 
 @app.post("/v1/extract/listing", response_model=ListingExtractionResult)
@@ -60,23 +66,28 @@ def extract_listing_endpoint(request: ListingExtractionRequest) -> ListingExtrac
     if not request.url and not request.html:
         raise HTTPException(status_code=400, detail="Provide either 'url' or 'html'.")
 
-    if request.render:
-        raise HTTPException(
-            status_code=501,
-            detail="Browser rendering is planned for v0.3. Use render=false for now.",
-        )
-
     url = str(request.url) if request.url else None
-    html = request.html
 
-    if not html and url:
-        try:
+    try:
+        if request.render:
+            if not url:
+                raise HTTPException(status_code=400, detail="render=true requires a URL.")
+            return extract_listing(
+                url,
+                render=True,
+                screenshot_path=request.screenshot_path,
+                html_snapshot_path=request.html_snapshot_path,
+            )
+
+        html = request.html
+        if not html and url:
             html = fetch_html(url)
-        except FetchError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-    assert html is not None
-    return extract_listing_from_html(html, url=url)
+        assert html is not None
+        return extract_listing_from_html(html, url=url)
+    except FetchError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except RenderError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
 
 
 @app.post("/v1/crawl/catalog", response_model=CatalogCrawlResult)
@@ -86,6 +97,10 @@ def crawl_catalog_endpoint(request: CatalogCrawlRequest) -> CatalogCrawlResult:
             start_url=str(request.url),
             max_pages=request.max_pages,
             follow_next_pages=request.follow_next_pages,
+            render=request.render,
+            debug_dir=request.debug_dir,
         )
     except FetchError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except RenderError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
