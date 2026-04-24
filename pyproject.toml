@@ -1,6 +1,6 @@
 [project]
 name = "commercelens"
-version = "0.2.0"
+version = "0.3.0"
 description = "Open-source product, catalog, and price intelligence extraction for developers."
 readme = "README.md"
 requires-python = ">=3.10"
