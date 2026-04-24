@@ -1,127 +1,213 @@
-# FastAPI E-commerce Scraper and Extractor
+# CommerceLens
 
-A FastAPI application that scrapes e-commerce websites and extracts product details using a combination of BeautifulSoup and [BERT](https://huggingface.co/google-bert/bert-base-uncased).
+Open-source product, catalog, and price intelligence extraction for developers.
 
-## Choice of LLM and Rationale
+CommerceLens turns messy e-commerce pages into structured product data using schema.org JSON-LD parsing, OpenGraph metadata, DOM heuristics, confidence scoring, and a clean Python SDK / CLI / FastAPI interface.
 
-For this project, BERT (Bidirectional Encoder Representations from Transformers) was chosen due to its strong performance in understanding context and relationships in text. BERT's pre-trained model on a large corpus of text data makes it a robust choice for processing and extracting meaningful information from HTML content, especially in an e-commerce context.
+> Goal: commerce-ready product data, not just raw HTML.
 
-## API Design and Implementation
+## Why CommerceLens?
 
-The API is implemented using FastAPI, known for its performance and ease of use. The design includes two primary endpoints:
+Most scraping tools return raw HTML, Markdown, or brittle selector outputs. CommerceLens is designed around normalized commerce objects: product name, brand, price, currency, availability, images, description, SKU, ratings, review counts, canonical URL, confidence scores, and extraction provenance.
 
-1. GET `/`: Scrapes book data from "Books to Scrape" by iterating through multiple pages, extracting details such as titles, prices, availability, and image URLs.
+CommerceLens is currently in early v0.1 development. The first release focuses on reliable product page extraction. Listing extraction, catalog crawling, browser rendering, price monitoring, and LLM fallback are planned next.
 
-2. POST `/extract_attributes`: Accepts an HTML block as input, processes it using BERT to extract attributes, and identifies their corresponding CSS selectors or XPaths.
+## Features in v0.1
 
-## Setup
+- Product page extraction
+- JSON-LD / schema.org Product parsing
+- OpenGraph metadata fallback
+- DOM heuristic fallback
+- Price and currency normalization
+- Availability normalization
+- Image extraction
+- Field-level confidence scores
+- Source provenance for extracted fields
+- Python SDK
+- CLI
+- FastAPI API
+- Lightweight dependencies, no heavy ML model required
 
-1. **Clone the repository**:
+## Installation
 
-   ```sh
-   git clone https://github.com/dipeshbabu/FastAPI-e-commerce-scraper-and-extractor.git
-   cd FastAPI-e-commerce-scraper-and-extractor
-   ```
-
-2. **Create and activate a virtual environment**:
-
-   - **Using `venv` (Python 3.3+)**:
-
-     ```sh
-     python -m venv grepenv
-     source grepenv/bin/activate  # On Windows use `grepenv\Scripts\activate`
-     ```
-
-   - **Using `virtualenv`**:
-     ```sh
-     virtualenv grepenv
-     source grepenv/bin/activate  # On Windows use `grepenv\Scripts\activate`
-     ```
-
-3. **Install dependencies**:
-
-   ```sh
-   pip install -r requirements.txt
-   ```
-
-4. **Run the FastAPI server**:
-
-   ```sh
-   uvicorn main:app --reload
-   or
-   fastapi dev main.py
-   ```
-
-5. **Access the API**:
-
-- Navigate to `http://127.0.0.1:8000/` to test the scraping endpoint.
-- Use an API client like Postman to test the `/extract_attributes` endpoint by sending a POST request with an HTML block.
-
-## API Endpoints
-
-### Scrape Books
-
-- **URL**: `/`
-- **Method**: `GET`
-- **Description**: Scrapes book data from "Books to Scrape" website.
-- **Response**: JSON array of books with details.
-
-### Extract Attributes
-
-- **URL**: `/extract_attributes`
-- **Method**: `POST`
-- **Description**: Extracts attributes from an HTML block.
-- **Request Body**:
-  ```json
-  {
-    "html": "<html_content>"
-  }
-  ```
-- **Response**: JSON object with extracted data and CSS selectors.
-
-## Examples
-
-### Example Response for `/`
-
-```json
-[
-{
-"title": "A Light in the Attic",
-"price": "£51.77",
-"availability": "In stock",
-"image_url": "https://books.toscrape.com/media/cache/fe/00/fe0012b0bce617e77a6d68b3e89f9254.jpg"
-},
-...
-]
+```bash
+pip install -e .
 ```
 
-### Example Input for `/extract_attributes`
+Or install from requirements:
+
+```bash
+pip install -r requirements.txt
+```
+
+## Python SDK
+
+```python
+from commercelens import extract_product
+
+result = extract_product("https://example.com/products/sample")
+print(result.product.name)
+print(result.product.price.amount)
+print(result.product.availability)
+print(result.model_dump_json(indent=2))
+```
+
+You can also extract from local or already-fetched HTML:
+
+```python
+from commercelens import extract_product_from_html
+
+html = """<html>...</html>"""
+result = extract_product_from_html(html, url="https://example.com/products/sample")
+```
+
+## CLI
+
+Extract from a URL:
+
+```bash
+commercelens product https://example.com/products/sample
+```
+
+Extract from local HTML:
+
+```bash
+commercelens html ./product.html --url https://example.com/products/sample
+```
+
+Write JSON output:
+
+```bash
+commercelens product https://example.com/products/sample --out product.json
+```
+
+Run the API server:
+
+```bash
+commercelens serve --host 0.0.0.0 --port 8000 --reload
+```
+
+## FastAPI API
+
+Start the server:
+
+```bash
+uvicorn commercelens.api.main:app --reload
+```
+
+Health check:
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+Extract a product:
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/extract/product \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com/products/sample"}'
+```
+
+Extract from HTML:
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/extract/product \
+  -H "Content-Type: application/json" \
+  -d '{"html":"<html><body><h1 class=\"product-title\">Sample</h1><span class=\"price\">$20.00</span></body></html>"}'
+```
+
+## Example response
 
 ```json
 {
-  "html": "<div class='product'><h3 class='product-name'>Sample Book</h3><p class='price_color'>$20.00</p><p class='instock availability'>In stock</p><div class='image_container'><img src='sample-image.jpg'/></div></div>"
+  "url": "https://example.com/products/sample",
+  "page_type": "product",
+  "product": {
+    "name": "Sample Sneaker",
+    "brand": "Acme",
+    "description": "A comfortable running sneaker.",
+    "price": {
+      "amount": 89.99,
+      "currency": "USD",
+      "raw": "89.99"
+    },
+    "availability": "in_stock",
+    "sku": "SNK-001",
+    "rating": 4.6,
+    "review_count": 128,
+    "image_urls": ["https://example.com/images/sneaker.jpg"],
+    "canonical_url": "https://example.com/products/sample",
+    "source_url": "https://example.com/products/sample"
+  },
+  "confidence": 0.93,
+  "fields": {
+    "name": {
+      "value": "Sample Sneaker",
+      "confidence": 0.98,
+      "source": "json_ld"
+    },
+    "price": {
+      "value": {"amount": 89.99, "currency": "USD", "raw": "89.99"},
+      "confidence": 0.96,
+      "source": "json_ld"
+    }
+  },
+  "warnings": []
 }
 ```
 
-### Example Output for `/extract_attributes`
+## Development
 
-```json
-{
-  "product_name": {
-    "value": "Sample Book",
-    "selector": "//h3[@class='product-name']"
-  },
-  "price": {
-    "value": "$20.00",
-    "selector": "//p[@class='price_color']"
-  },
-  "description": {
-    "value": "In stock",
-    "selector": "//p[@class='description']"
-  },
-  "image_url": {
-    "value": "https://example.com/product-image.jpg",
-    "selector": "//div[@class='image_container']/img"
-  }
-}
+```bash
+pip install -e ".[dev]"
+pytest
+ruff check .
 ```
+
+## Product roadmap
+
+### v0.1: Product extraction core
+
+- Schema-first product extraction
+- JSON-LD parser
+- OpenGraph fallback
+- DOM fallback
+- CLI and FastAPI surface
+- Basic tests
+
+### v0.2: Catalog and listing extraction
+
+- Category/listing page extraction
+- Product card extraction
+- Pagination discovery
+- URL normalization
+- JSONL/CSV export
+
+### v0.3: Browser rendering and dynamic pages
+
+- Optional Playwright renderer
+- JavaScript-heavy product page support
+- Screenshot/debug artifacts
+
+### v0.4: Price intelligence
+
+- SQLite product snapshots
+- Price history
+- Change detection
+- Back-in-stock detection
+- Webhook/email alert hooks
+
+### v0.5: LLM fallback
+
+- Schema-constrained extraction fallback
+- Natural language extraction instructions
+- Field-level validation against deterministic extractors
+
+## Positioning
+
+CommerceLens is not trying to be a generic scraper first. It is a commerce data engine: a focused toolkit for product, catalog, and price intelligence.
+
+## License
+
+MIT
