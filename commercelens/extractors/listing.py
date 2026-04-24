@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup, Tag
 
 from commercelens.core.fetcher import fetch_html
+from commercelens.core.renderer import render_html
 from commercelens.core.urls import normalize_url
 from commercelens.extractors.availability import normalize_availability
 from commercelens.extractors.price import parse_price
@@ -215,6 +217,24 @@ def extract_listing_from_html(html: str, url: str | None = None) -> ListingExtra
     )
 
 
-def extract_listing(url: str) -> ListingExtractionResult:
+def extract_listing(
+    url: str,
+    render: bool = False,
+    screenshot_path: str | Path | None = None,
+    html_snapshot_path: str | Path | None = None,
+) -> ListingExtractionResult:
+    if render:
+        rendered = render_html(
+            url,
+            screenshot_path=screenshot_path,
+            html_snapshot_path=html_snapshot_path,
+        )
+        result = extract_listing_from_html(rendered.html, url=rendered.final_url or url)
+        if rendered.screenshot_path:
+            result.warnings.append(f"Saved screenshot to {rendered.screenshot_path}")
+        if rendered.html_snapshot_path:
+            result.warnings.append(f"Saved HTML snapshot to {rendered.html_snapshot_path}")
+        return result
+
     html = fetch_html(url)
     return extract_listing_from_html(html, url=url)
