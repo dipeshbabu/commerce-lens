@@ -2,27 +2,32 @@
 
 Open-source product, catalog, and price intelligence extraction for developers.
 
-CommerceLens turns messy e-commerce pages into structured product data using schema.org JSON-LD parsing, OpenGraph metadata, DOM heuristics, confidence scoring, and a clean Python SDK / CLI / FastAPI interface.
+CommerceLens turns messy e-commerce pages into structured product and listing data using schema.org JSON-LD parsing, OpenGraph metadata, DOM heuristics, confidence scoring, catalog crawling, and a clean Python SDK / CLI / FastAPI interface.
 
 > Goal: commerce-ready product data, not just raw HTML.
 
 ## Why CommerceLens?
 
-Most scraping tools return raw HTML, Markdown, or brittle selector outputs. CommerceLens is designed around normalized commerce objects: product name, brand, price, currency, availability, images, description, SKU, ratings, review counts, canonical URL, confidence scores, and extraction provenance.
+Most scraping tools return raw HTML, Markdown, or brittle selector outputs. CommerceLens is designed around normalized commerce objects: product name, brand, price, currency, availability, images, description, SKU, ratings, review counts, canonical URL, listing product cards, confidence scores, and extraction provenance.
 
-CommerceLens is currently in early v0.1 development. The first release focuses on reliable product page extraction. Listing extraction, catalog crawling, browser rendering, price monitoring, and LLM fallback are planned next.
+CommerceLens is currently in early v0.2 development. The current release focuses on product page extraction, listing/category extraction, basic catalog crawling, and JSONL/CSV export. Browser rendering, price monitoring, and LLM fallback are planned next.
 
-## Features in v0.1
+## Features in v0.2
 
 - Product page extraction
+- Listing/category page extraction
+- Basic catalog crawling by following next-page links
 - JSON-LD / schema.org Product parsing
 - OpenGraph metadata fallback
 - DOM heuristic fallback
+- Product card extraction
+- Pagination discovery
 - Price and currency normalization
 - Availability normalization
 - Image extraction
 - Field-level confidence scores
 - Source provenance for extracted fields
+- JSON, JSONL, and CSV export
 - Python SDK
 - CLI
 - FastAPI API
@@ -42,6 +47,8 @@ pip install -r requirements.txt
 
 ## Python SDK
 
+Extract a product page:
+
 ```python
 from commercelens import extract_product
 
@@ -49,10 +56,9 @@ result = extract_product("https://example.com/products/sample")
 print(result.product.name)
 print(result.product.price.amount)
 print(result.product.availability)
-print(result.model_dump_json(indent=2))
 ```
 
-You can also extract from local or already-fetched HTML:
+Extract from local or already-fetched HTML:
 
 ```python
 from commercelens import extract_product_from_html
@@ -61,24 +67,50 @@ html = """<html>...</html>"""
 result = extract_product_from_html(html, url="https://example.com/products/sample")
 ```
 
+Extract a listing/category page:
+
+```python
+from commercelens import extract_listing
+
+listing = extract_listing("https://example.com/collections/shoes")
+for item in listing.products:
+    print(item.name, item.price, item.url)
+```
+
+Crawl a catalog by following next-page links:
+
+```python
+from commercelens import crawl_catalog
+
+catalog = crawl_catalog("https://example.com/collections/shoes", max_pages=5)
+print(catalog.product_count)
+```
+
 ## CLI
 
-Extract from a URL:
+Extract from a product URL:
 
 ```bash
 commercelens product https://example.com/products/sample
 ```
 
-Extract from local HTML:
+Extract product cards from a listing page:
 
 ```bash
-commercelens html ./product.html --url https://example.com/products/sample
+commercelens listing https://example.com/collections/shoes
 ```
 
-Write JSON output:
+Export listing products as JSONL or CSV:
 
 ```bash
-commercelens product https://example.com/products/sample --out product.json
+commercelens listing https://example.com/collections/shoes --format jsonl --out products.jsonl
+commercelens listing https://example.com/collections/shoes --format csv --out products.csv
+```
+
+Crawl a catalog:
+
+```bash
+commercelens crawl https://example.com/collections/shoes --max-pages 5 --format jsonl --out catalog.jsonl
 ```
 
 Run the API server:
@@ -109,50 +141,47 @@ curl -X POST http://127.0.0.1:8000/v1/extract/product \
   -d '{"url":"https://example.com/products/sample"}'
 ```
 
-Extract from HTML:
+Extract a listing page:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/v1/extract/product \
+curl -X POST http://127.0.0.1:8000/v1/extract/listing \
   -H "Content-Type: application/json" \
-  -d '{"html":"<html><body><h1 class=\"product-title\">Sample</h1><span class=\"price\">$20.00</span></body></html>"}'
+  -d '{"url":"https://example.com/collections/shoes"}'
 ```
 
-## Example response
+Crawl a catalog:
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/crawl/catalog \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com/collections/shoes", "max_pages": 5}'
+```
+
+## Example listing response
 
 ```json
 {
-  "url": "https://example.com/products/sample",
-  "page_type": "product",
-  "product": {
-    "name": "Sample Sneaker",
-    "brand": "Acme",
-    "description": "A comfortable running sneaker.",
-    "price": {
-      "amount": 89.99,
-      "currency": "USD",
-      "raw": "89.99"
-    },
-    "availability": "in_stock",
-    "sku": "SNK-001",
-    "rating": 4.6,
-    "review_count": 128,
-    "image_urls": ["https://example.com/images/sneaker.jpg"],
-    "canonical_url": "https://example.com/products/sample",
-    "source_url": "https://example.com/products/sample"
-  },
-  "confidence": 0.93,
-  "fields": {
-    "name": {
-      "value": "Sample Sneaker",
-      "confidence": 0.98,
-      "source": "json_ld"
-    },
-    "price": {
-      "value": {"amount": 89.99, "currency": "USD", "raw": "89.99"},
-      "confidence": 0.96,
-      "source": "json_ld"
+  "url": "https://example.com/collections/shoes",
+  "page_type": "listing",
+  "products": [
+    {
+      "name": "Sample Sneaker",
+      "url": "https://example.com/products/sample-sneaker",
+      "price": {
+        "amount": 89.99,
+        "currency": "USD",
+        "raw": "$89.99"
+      },
+      "image_url": "https://example.com/images/sneaker.jpg",
+      "availability": "in_stock",
+      "position": 1,
+      "source_selector": "[class*='product-card']",
+      "confidence": 0.95
     }
-  },
+  ],
+  "product_count": 1,
+  "next_page_url": "https://example.com/collections/shoes?page=2",
+  "confidence": 0.95,
   "warnings": []
 }
 ```
