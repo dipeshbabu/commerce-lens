@@ -1,18 +1,18 @@
 # CommerceLens
 
-Open-source product, catalog, monitoring, and price intelligence extraction for developers.
+Open-source product, catalog, monitoring, alerting, matching, and price intelligence extraction for developers.
 
-CommerceLens turns messy e-commerce pages into structured product, listing, price-history, and alert data using schema.org JSON-LD parsing, OpenGraph metadata, DOM heuristics, confidence scoring, catalog crawling, optional browser rendering, SQLite snapshots, change detection, configurable alert rules, and a clean Python SDK / CLI / FastAPI interface.
+CommerceLens turns messy e-commerce pages into structured product, listing, price-history, alert, and product-matching data using schema.org JSON-LD parsing, OpenGraph metadata, DOM heuristics, confidence scoring, catalog crawling, optional browser rendering, SQLite/Postgres snapshots, change detection, configurable alert rules, dataset connectors, and a clean Python SDK / CLI / FastAPI interface.
 
 > Goal: commerce-ready product intelligence, not just raw HTML.
 
 ## Why CommerceLens?
 
-Most scraping tools return raw HTML, Markdown, screenshots, or brittle selector outputs. CommerceLens is designed around normalized commerce objects: product name, brand, price, currency, availability, images, description, SKU, ratings, review counts, canonical URL, listing product cards, confidence scores, extraction provenance, price history, product-level change events, and alerts.
+Most scraping tools return raw HTML, Markdown, screenshots, or brittle selector outputs. CommerceLens is designed around normalized commerce objects: product name, brand, price, currency, availability, images, description, SKU, ratings, review counts, canonical URL, listing product cards, confidence scores, extraction provenance, price history, product-level change events, alerts, and cross-store product matches.
 
-CommerceLens is currently in early v0.5 development. The current release focuses on product page extraction, listing/category extraction, catalog crawling, JSONL/CSV export, optional Playwright rendering for JavaScript-heavy pages, local price intelligence through SQLite-backed product snapshots, and config-driven alert monitoring.
+CommerceLens is currently in early v0.6 development. The current release focuses on product page extraction, listing/category extraction, catalog crawling, JSONL/CSV export, optional Playwright rendering for JavaScript-heavy pages, local price intelligence through SQLite-backed product snapshots, optional PostgreSQL storage for hosted deployments, config-driven alert monitoring, dataset import/export, and product matching.
 
-## Features in v0.5
+## Features in v0.6
 
 - Product page extraction
 - Listing/category page extraction
@@ -31,6 +31,8 @@ CommerceLens is currently in early v0.5 development. The current release focuses
 - Field-level confidence scores
 - Source provenance for extracted fields
 - SQLite product snapshot storage
+- Optional PostgreSQL product snapshot backend
+- Storage backend abstraction for hosted deployments
 - Product identity keys
 - Price history lookup
 - Price drop detection
@@ -42,15 +44,18 @@ CommerceLens is currently in early v0.5 development. The current release focuses
 - Alert delivery to stdout, file, webhook, Slack, and email
 - Dry-run alert payload generation
 - GitHub Actions scheduled monitoring workflow
-- JSON, JSONL, and CSV export
+- Dataset import from txt, CSV, JSON, and JSONL
+- Dataset export to CSV, JSON, and JSONL
+- Transparent product matching across datasets/domains
+- Stable webhook envelopes for alert events
 - Python SDK
 - CLI
 - FastAPI API
-- Lightweight default install; browser support is optional
+- Lightweight default install; browser and Postgres support are optional
 
 ## Installation
 
-Static extraction, price monitoring, and alerts:
+Static extraction, price monitoring, matching, and alerts:
 
 ```bash
 pip install -e .
@@ -61,6 +66,12 @@ Browser rendering support:
 ```bash
 pip install -e ".[browser]"
 playwright install chromium
+```
+
+PostgreSQL backend support:
+
+```bash
+pip install -e ".[postgres]"
 ```
 
 Or install from requirements:
@@ -82,7 +93,7 @@ print(result.product.price.amount)
 print(result.product.availability)
 ```
 
-Monitor a product price:
+Monitor a product price with local SQLite:
 
 ```python
 from commercelens import monitor_product
@@ -93,6 +104,31 @@ print(result.has_change)
 print(result.change)
 ```
 
+Use the hosted-ready storage abstraction:
+
+```python
+from commercelens import StorageConfig, monitor_product
+
+result = monitor_product(
+    "https://example.com/products/sample",
+    storage_config=StorageConfig(backend="sqlite", sqlite_path="prices.db"),
+)
+```
+
+Use PostgreSQL for hosted deployments:
+
+```python
+from commercelens import StorageConfig, monitor_product
+
+result = monitor_product(
+    "https://example.com/products/sample",
+    storage_config=StorageConfig(
+        backend="postgres",
+        postgres_dsn="postgresql://user:password@localhost:5432/commercelens",
+    ),
+)
+```
+
 Run a monitor config and build alert payloads without delivering them:
 
 ```python
@@ -101,6 +137,18 @@ from commercelens import load_monitor_config, run_monitor_config
 config = load_monitor_config("examples/monitor_config.json")
 result = run_monitor_config(config, dry_run=True)
 print(result.events)
+```
+
+Match products across datasets:
+
+```python
+from commercelens import ProductRecord, match_products
+
+left = [ProductRecord(name="Nike Air Max 90", brand="Nike", amount=120, currency="USD")]
+right = [ProductRecord(name="Nike Air Max 90 Shoes", brand="Nike", amount=125, currency="USD")]
+
+matches = match_products(left, right, threshold=0.72)
+print(matches.matches)
 ```
 
 Read price history:
@@ -193,6 +241,25 @@ Run alerts and deliver them:
 commercelens run commercelens.monitor.json
 ```
 
+Export latest tracked products:
+
+```bash
+commercelens export-history --db prices.db --out latest_products.jsonl
+commercelens export-history --db prices.db --out latest_products.csv
+```
+
+Load and normalize a product dataset:
+
+```bash
+commercelens load-records examples/products_a.csv --out normalized.json
+```
+
+Match products across two datasets:
+
+```bash
+commercelens match-records examples/products_a.csv examples/products_b.csv --threshold 0.72 --out matches.json
+```
+
 Show price history for a product key:
 
 ```bash
@@ -259,6 +326,17 @@ Supported destinations include `stdout`, `file`, `webhook`, `slack`, and `email`
 
 See `docs/alerts.md` for the complete alert monitoring guide.
 
+## Hosted data layer and connectors
+
+See `docs/hosted_data_layer.md` for full examples covering:
+
+- SQLite and PostgreSQL storage backends
+- monitoring with a backend object
+- dataset import/export
+- product matching
+- webhook envelopes
+- API examples
+
 ## FastAPI API
 
 Start the server:
@@ -304,6 +382,18 @@ curl -X POST http://127.0.0.1:8000/v1/alerts/run \
   }'
 ```
 
+Match product records:
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/match/products \
+  -H "Content-Type: application/json" \
+  -d '{
+    "left": [{"name": "Nike Air Max 90", "brand": "Nike", "amount": 120, "currency": "USD"}],
+    "right": [{"name": "Nike Air Max 90 Shoes", "brand": "Nike", "amount": 125, "currency": "USD"}],
+    "threshold": 0.72
+  }'
+```
+
 Run alert monitoring from a file path:
 
 ```bash
@@ -335,6 +425,12 @@ commercelens monitor https://example.com/products/sample --db prices.db
 commercelens history PRODUCT_KEY_FROM_MONITOR_RESULT --db prices.db
 commercelens init-config commercelens.monitor.json
 commercelens run commercelens.monitor.json --dry-run
+```
+
+To test product matching:
+
+```bash
+commercelens match-records examples/products_a.csv examples/products_b.csv --threshold 0.72
 ```
 
 ## Product roadmap
@@ -380,14 +476,23 @@ commercelens run commercelens.monitor.json --dry-run
 
 ### v0.6: Hosted-ready data layer and connectors
 
-- PostgreSQL storage backend
-- Queue-based monitoring jobs
+- Storage backend abstraction
+- Optional PostgreSQL snapshot backend
 - Product matching across domains
-- More export/connectors
+- Dataset import/export connectors
+- Webhook event envelopes
+
+### v0.7: Worker queue and hosted monitoring service
+
+- Redis/RQ or Celery worker
+- Scheduled job persistence
+- retry/backoff policies
+- multi-tenant API keys
+- hosted deployment template
 
 ## Positioning
 
-CommerceLens is not trying to be a generic scraper first. It is a commerce data engine: a focused toolkit for product, catalog, monitoring, and price intelligence.
+CommerceLens is not trying to be a generic scraper first. It is a commerce data engine: a focused toolkit for product, catalog, monitoring, alerting, matching, and price intelligence.
 
 ## License
 
