@@ -9,10 +9,12 @@ from rich.console import Console
 
 from commercelens.alerts.config import save_example_config
 from commercelens.alerts.runner import run_monitor_config_file
+from commercelens.connectors.datasets import load_product_records, records_from_snapshots, write_product_records
 from commercelens.core.crawler import crawl_catalog
 from commercelens.core.monitor import monitor_product, monitor_products
 from commercelens.extractors.listing import extract_listing, extract_listing_from_html
 from commercelens.extractors.product import extract_product, extract_product_from_html
+from commercelens.matching.products import match_products
 from commercelens.storage.exporters import write_csv, write_jsonl
 from commercelens.storage.price_store import PriceSnapshotStore
 
@@ -133,6 +135,36 @@ def changes(db: Path = typer.Option(Path("commercelens.db"), "--db"), out: Path 
     store = PriceSnapshotStore(db)
     detected = [change.__dict__ for change in store.detect_changes()]
     _write_or_print(detected, out=out)
+
+
+@app.command("export-history")
+def export_history(db: Path = typer.Option(Path("commercelens.db"), "--db"), out: Path = typer.Option(..., "--out", "-o"), limit: int = typer.Option(1000, "--limit", min=1, max=100000)) -> None:
+    """Export latest tracked product snapshots as CSV, JSON, or JSONL."""
+    store = PriceSnapshotStore(db)
+    records = records_from_snapshots(store.list_latest(limit=limit))
+    result = write_product_records(records, out)
+    _write_or_print(result.model_dump(mode="json"))
+
+
+@app.command("load-records")
+def load_records(path: Path = typer.Argument(...), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+    """Load a product dataset from txt/csv/json/jsonl and normalize it."""
+    result = load_product_records(path)
+    payload = result.model_dump(mode="json", exclude_none=True)
+    _write_or_print(payload, out=out)
+
+
+@app.command("match-records")
+def match_records(left: Path = typer.Argument(...), right: Path = typer.Argument(...), threshold: float = typer.Option(0.72, "--threshold"), top_k: int = typer.Option(1, "--top-k", min=1, max=10), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+    """Match products across two CSV/JSON/JSONL datasets."""
+    left_result = load_product_records(left)
+    right_result = load_product_records(right)
+    result = match_products(left_result.records, right_result.records, threshold=threshold, top_k=top_k)
+    payload = {
+        "matches": [match.model_dump(mode="json", exclude_none=True) for match in result.matches],
+        "warnings": left_result.warnings + right_result.warnings,
+    }
+    _write_or_print(payload, out=out)
 
 
 @app.command()
