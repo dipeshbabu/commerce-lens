@@ -7,13 +7,16 @@ from typing import Literal
 import typer
 from rich.console import Console
 
-from commercelens.alerts.config import save_example_config
+from commercelens.alerts.config import MonitorConfig, save_example_config
 from commercelens.alerts.runner import run_monitor_config_file
 from commercelens.connectors.datasets import load_product_records, records_from_snapshots, write_product_records
 from commercelens.core.crawler import crawl_catalog
 from commercelens.core.monitor import monitor_product, monitor_products
 from commercelens.extractors.listing import extract_listing, extract_listing_from_html
 from commercelens.extractors.product import extract_product, extract_product_from_html
+from commercelens.jobs.models import ApiKeyCreate, JobStatus, MonitoringJobCreate, MonitoringJobUpdate, ScheduleKind
+from commercelens.jobs.store import JobStore
+from commercelens.jobs.worker import MonitoringWorker, run_job_now
 from commercelens.matching.products import match_products
 from commercelens.storage.exporters import write_csv, write_jsonl
 from commercelens.storage.price_store import PriceSnapshotStore
@@ -31,6 +34,10 @@ def _write_or_print(payload: dict | list, out: Path | None = None) -> None:
         console.print(f"[green]Wrote result to {out}[/green]")
     else:
         console.print_json(text)
+
+
+def _job_store(path: Path) -> JobStore:
+    return JobStore(path)
 
 
 @app.command()
@@ -119,6 +126,79 @@ def init_config(path: Path = typer.Argument(Path("commercelens.monitor.json"))) 
     """Create an example monitoring and alert config."""
     save_example_config(path)
     console.print(f"[green]Wrote example config to {path}[/green]")
+
+
+@app.command("create-job")
+def create_job(config: Path = typer.Argument(...), name: str = typer.Option(..., "--name"), jobs_db: Path = typer.Option(Path("commercelens_jobs.db"), "--jobs-db"), interval_minutes: int = typer.Option(360, "--interval-minutes", min=1), manual: bool = typer.Option(False, "--manual"), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+    """Create a persistent hosted monitoring job from a monitor config file."""
+    monitor_config = MonitorConfig.load(config)
+    request = MonitoringJobCreate(
+        name=name,
+        config=monitor_config,
+        schedule_kind=ScheduleKind.manual if manual else ScheduleKind.interval,
+        interval_minutes=interval_minutes,
+    )
+    job = _job_store(jobs_db).create_job(request)
+    _write_or_print(job.model_dump(mode="json", exclude_none=True), out=out)
+
+
+@app.command("list-jobs")
+def list_jobs(jobs_db: Path = typer.Option(Path("commercelens_jobs.db"), "--jobs-db"), status: JobStatus | None = typer.Option(None, "--status"), limit: int = typer.Option(100, "--limit", min=1, max=1000), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+    """List persistent monitoring jobs."""
+    jobs = _job_store(jobs_db).list_jobs(status=status, limit=limit)
+    _write_or_print([job.model_dump(mode="json", exclude_none=True) for job in jobs], out=out)
+
+
+@app.command("pause-job")
+def pause_job(job_id: str = typer.Argument(...), jobs_db: Path = typer.Option(Path("commercelens_jobs.db"), "--jobs-db")) -> None:
+    """Pause a monitoring job."""
+    job = _job_store(jobs_db).update_job(job_id, MonitoringJobUpdate(status=JobStatus.paused))
+    if not job:
+        raise typer.BadParameter(f"Job not found: {job_id}")
+    console.print(f"[green]Paused {job.id}[/green]")
+
+
+@app.command("resume-job")
+def resume_job(job_id: str = typer.Argument(...), jobs_db: Path = typer.Option(Path("commercelens_jobs.db"), "--jobs-db")) -> None:
+    """Resume a monitoring job."""
+    job = _job_store(jobs_db).update_job(job_id, MonitoringJobUpdate(status=JobStatus.active))
+    if not job:
+        raise typer.BadParameter(f"Job not found: {job_id}")
+    console.print(f"[green]Resumed {job.id}[/green]")
+
+
+@app.command("run-job")
+def run_job(job_id: str = typer.Argument(...), jobs_db: Path = typer.Option(Path("commercelens_jobs.db"), "--jobs-db"), dry_run: bool = typer.Option(False, "--dry-run"), no_deliver: bool = typer.Option(False, "--no-deliver"), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+    """Run a persistent monitoring job immediately."""
+    result = run_job_now(_job_store(jobs_db), job_id, dry_run=dry_run, deliver=not no_deliver)
+    _write_or_print(result.model_dump(mode="json", exclude_none=True), out=out)
+
+
+@app.command("worker-tick")
+def worker_tick(jobs_db: Path = typer.Option(Path("commercelens_jobs.db"), "--jobs-db"), limit: int = typer.Option(25, "--limit", min=1, max=100), dry_run: bool = typer.Option(False, "--dry-run"), no_deliver: bool = typer.Option(False, "--no-deliver"), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+    """Execute due monitoring jobs once."""
+    result = MonitoringWorker(store_path=jobs_db).tick(limit=limit, dry_run=dry_run, deliver=not no_deliver)
+    _write_or_print(result.model_dump(mode="json", exclude_none=True), out=out)
+
+
+@app.command("worker")
+def worker(jobs_db: Path = typer.Option(Path("commercelens_jobs.db"), "--jobs-db"), poll_seconds: int = typer.Option(60, "--poll-seconds", min=1), limit: int = typer.Option(25, "--limit", min=1, max=100), dry_run: bool = typer.Option(False, "--dry-run"), no_deliver: bool = typer.Option(False, "--no-deliver")) -> None:
+    """Run the monitoring worker loop."""
+    MonitoringWorker(store_path=jobs_db).run_forever(poll_seconds=poll_seconds, limit=limit, dry_run=dry_run, deliver=not no_deliver)
+
+
+@app.command("list-runs")
+def list_runs(jobs_db: Path = typer.Option(Path("commercelens_jobs.db"), "--jobs-db"), job_id: str | None = typer.Option(None, "--job-id"), limit: int = typer.Option(100, "--limit", min=1, max=1000), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+    """List monitoring job runs."""
+    runs = _job_store(jobs_db).list_runs(job_id=job_id, limit=limit)
+    _write_or_print([run.model_dump(mode="json", exclude_none=True) for run in runs], out=out)
+
+
+@app.command("create-api-key")
+def create_api_key(name: str = typer.Option(..., "--name"), jobs_db: Path = typer.Option(Path("commercelens_jobs.db"), "--jobs-db"), owner: str | None = typer.Option(None, "--owner"), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+    """Create an API key for hosted deployments."""
+    result = _job_store(jobs_db).create_api_key(ApiKeyCreate(name=name, owner=owner))
+    _write_or_print(result.model_dump(mode="json", exclude_none=True), out=out)
 
 
 @app.command()

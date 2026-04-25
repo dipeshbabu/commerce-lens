@@ -2,17 +2,17 @@
 
 Open-source product, catalog, monitoring, alerting, matching, and price intelligence extraction for developers.
 
-CommerceLens turns messy e-commerce pages into structured product, listing, price-history, alert, and product-matching data using schema.org JSON-LD parsing, OpenGraph metadata, DOM heuristics, confidence scoring, catalog crawling, optional browser rendering, SQLite/Postgres snapshots, change detection, configurable alert rules, dataset connectors, and a clean Python SDK / CLI / FastAPI interface.
+CommerceLens turns messy e-commerce pages into structured product, listing, price-history, alert, and product-matching data using schema.org JSON-LD parsing, OpenGraph metadata, DOM heuristics, confidence scoring, catalog crawling, optional browser rendering, SQLite/Postgres snapshots, change detection, configurable alert rules, dataset connectors, persistent monitoring jobs, worker execution, API keys, and a clean Python SDK / CLI / FastAPI interface.
 
 > Goal: commerce-ready product intelligence, not just raw HTML.
 
 ## Why CommerceLens?
 
-Most scraping tools return raw HTML, Markdown, screenshots, or brittle selector outputs. CommerceLens is designed around normalized commerce objects: product name, brand, price, currency, availability, images, description, SKU, ratings, review counts, canonical URL, listing product cards, confidence scores, extraction provenance, price history, product-level change events, alerts, and cross-store product matches.
+Most scraping tools return raw HTML, Markdown, screenshots, or brittle selector outputs. CommerceLens is designed around normalized commerce objects: product name, brand, price, currency, availability, images, description, SKU, ratings, review counts, canonical URL, listing product cards, confidence scores, extraction provenance, price history, product-level change events, alerts, cross-store product matches, persistent monitor jobs, and run history.
 
-CommerceLens is currently in early v0.6 development. The current release focuses on product page extraction, listing/category extraction, catalog crawling, JSONL/CSV export, optional Playwright rendering for JavaScript-heavy pages, local price intelligence through SQLite-backed product snapshots, optional PostgreSQL storage for hosted deployments, config-driven alert monitoring, dataset import/export, and product matching.
+CommerceLens is currently in early v0.7 development. The current release focuses on product page extraction, listing/category extraction, catalog crawling, JSONL/CSV export, optional Playwright rendering for JavaScript-heavy pages, local price intelligence through SQLite-backed product snapshots, optional PostgreSQL storage for hosted deployments, config-driven alert monitoring, dataset import/export, product matching, persistent monitoring jobs, worker execution, API keys, and Docker deployment.
 
-## Features in v0.6
+## Features in v0.7
 
 - Product page extraction
 - Listing/category page extraction
@@ -48,6 +48,12 @@ CommerceLens is currently in early v0.6 development. The current release focuses
 - Dataset export to CSV, JSON, and JSONL
 - Transparent product matching across datasets/domains
 - Stable webhook envelopes for alert events
+- Persistent monitoring jobs
+- Interval and manual job schedules
+- Worker tick and long-running worker loop
+- Job run history with status, errors, durations, events, deliveries, and warnings
+- Optional API key authentication for hosted deployments
+- Docker and docker-compose deployment files
 - Python SDK
 - CLI
 - FastAPI API
@@ -55,7 +61,7 @@ CommerceLens is currently in early v0.6 development. The current release focuses
 
 ## Installation
 
-Static extraction, price monitoring, matching, and alerts:
+Static extraction, price monitoring, matching, alerts, and worker jobs:
 
 ```bash
 pip install -e .
@@ -241,6 +247,45 @@ Run alerts and deliver them:
 commercelens run commercelens.monitor.json
 ```
 
+Create a persistent monitoring job:
+
+```bash
+commercelens create-job commercelens.monitor.json \
+  --name "Watch competitor prices" \
+  --interval-minutes 360
+```
+
+List jobs and runs:
+
+```bash
+commercelens list-jobs
+commercelens list-runs
+```
+
+Run a job immediately:
+
+```bash
+commercelens run-job job_xxxxxxxxxxxxxxxx --dry-run
+```
+
+Execute due jobs once:
+
+```bash
+commercelens worker-tick --dry-run
+```
+
+Run the worker loop:
+
+```bash
+commercelens worker --poll-seconds 60
+```
+
+Create an API key for hosted deployments:
+
+```bash
+commercelens create-api-key --name "local dev"
+```
+
 Export latest tracked products:
 
 ```bash
@@ -326,6 +371,25 @@ Supported destinations include `stdout`, `file`, `webhook`, `slack`, and `email`
 
 See `docs/alerts.md` for the complete alert monitoring guide.
 
+## Hosted worker service
+
+CommerceLens can run as a lightweight hosted monitoring service.
+
+Run with Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+The compose stack runs two processes:
+
+```text
+api:    FastAPI server on port 8000
+worker: background worker loop polling due jobs
+```
+
+See `docs/worker-service.md` for the complete hosted service guide.
+
 ## Hosted data layer and connectors
 
 See `docs/hosted_data_layer.md` for full examples covering:
@@ -382,6 +446,20 @@ curl -X POST http://127.0.0.1:8000/v1/alerts/run \
   }'
 ```
 
+Create a persistent monitoring job:
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/jobs \
+  -H "Content-Type: application/json" \
+  -d @job.json
+```
+
+Run due jobs once:
+
+```bash
+curl -X POST "http://127.0.0.1:8000/v1/worker/tick?dry_run=true"
+```
+
 Match product records:
 
 ```bash
@@ -431,6 +509,15 @@ To test product matching:
 
 ```bash
 commercelens match-records examples/products_a.csv examples/products_b.csv --threshold 0.72
+```
+
+To test hosted jobs:
+
+```bash
+commercelens init-config commercelens.monitor.json
+commercelens create-job commercelens.monitor.json --name "demo" --interval-minutes 1
+commercelens worker-tick --dry-run
+commercelens list-runs
 ```
 
 ## Product roadmap
@@ -484,15 +571,17 @@ commercelens match-records examples/products_a.csv examples/products_b.csv --thr
 
 ### v0.7: Worker queue and hosted monitoring service
 
-- Redis/RQ or Celery worker
-- Scheduled job persistence
+- Persistent monitoring jobs
+- Interval and manual schedules
+- Job run history
+- Worker tick and worker loop
 - retry/backoff policies
-- multi-tenant API keys
+- API keys
 - hosted deployment template
 
 ## Positioning
 
-CommerceLens is not trying to be a generic scraper first. It is a commerce data engine: a focused toolkit for product, catalog, monitoring, alerting, matching, and price intelligence.
+CommerceLens is not trying to be a generic scraper first. It is a commerce data engine: a focused toolkit for product, catalog, monitoring, alerting, matching, scheduled jobs, and price intelligence.
 
 ## License
 
