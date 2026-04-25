@@ -1,0 +1,46 @@
+{
+  "db_path": "prices.db",
+  "render": false,
+  "targets": [
+    {
+      "url": "https://example.com/products/sample",
+      "tags": ["demo"]
+    },
+    {
+      "url": "https://example.com/products/another-sample",
+      "tags": ["demo"]
+    }
+  ],
+  "rules": [
+    {
+      "name": "any-change-local-log",
+      "condition": "any_change",
+      "destinations": [
+        {
+          "type": "file",
+          "file_path": "alerts.jsonl"
+        }
+      ]
+    },
+    {
+      "name": "ten-percent-price-drop",
+      "condition": "percent_drop_at_least",
+      "threshold": 10,
+      "destinations": [
+        {
+          "type": "stdout"
+        }
+      ]
+    },
+    {
+      "name": "back-in-stock-slack",
+      "condition": "back_in_stock",
+      "destinations": [
+        {
+          "type": "slack",
+          "url": "https://hooks.slack.com/services/YOUR/WEBHOOK/HERE"
+        }
+      ]
+    }
+  ]
+}
