@@ -8,9 +8,11 @@ import typer
 from rich.console import Console
 
 from commercelens.core.crawler import crawl_catalog
+from commercelens.core.monitor import monitor_product, monitor_products
 from commercelens.extractors.listing import extract_listing, extract_listing_from_html
 from commercelens.extractors.product import extract_product, extract_product_from_html
 from commercelens.storage.exporters import write_csv, write_jsonl
+from commercelens.storage.price_store import PriceSnapshotStore
 
 app = typer.Typer(help="CommerceLens: product and catalog extraction for developers.")
 console = Console()
@@ -18,11 +20,11 @@ console = Console()
 OutputFormat = Literal["json", "jsonl", "csv"]
 
 
-def _write_or_print(payload: dict, out: Path | None = None) -> None:
+def _write_or_print(payload: dict | list, out: Path | None = None) -> None:
     text = json.dumps(payload, indent=2, ensure_ascii=False)
     if out:
         out.write_text(text, encoding="utf-8")
-        console.print(f"[green]Wrote extraction result to {out}[/green]")
+        console.print(f"[green]Wrote result to {out}[/green]")
     else:
         console.print_json(text)
 
@@ -123,6 +125,55 @@ def crawl(
         console.print(f"[green]Wrote {len(result.products)} products to {out}[/green]")
         return
     _write_or_print(result.model_dump(mode="json", exclude_none=True), out=out)
+
+
+@app.command()
+def monitor(
+    url: str = typer.Argument(..., help="Product URL to snapshot and compare."),
+    db: Path = typer.Option(Path("commercelens.db"), "--db", help="SQLite database path."),
+    render: bool = typer.Option(False, "--render", help="Render the page before extraction."),
+    out: Path | None = typer.Option(None, "--out", "-o", help="Optional JSON output path."),
+) -> None:
+    """Extract a product, save a price snapshot, and report changes."""
+    result = monitor_product(url, db_path=db, render=render)
+    _write_or_print(result.model_dump(mode="json", exclude_none=True), out=out)
+
+
+@app.command()
+def monitor_batch(
+    urls_file: Path = typer.Argument(..., help="Text file with one product URL per line."),
+    db: Path = typer.Option(Path("commercelens.db"), "--db", help="SQLite database path."),
+    render: bool = typer.Option(False, "--render", help="Render each page before extraction."),
+    out: Path | None = typer.Option(None, "--out", "-o", help="Optional JSON output path."),
+) -> None:
+    """Monitor many product URLs from a text file."""
+    urls = [line.strip() for line in urls_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+    result = monitor_products(urls, db_path=db, render=render)
+    _write_or_print(result.model_dump(mode="json", exclude_none=True), out=out)
+
+
+@app.command()
+def history(
+    product_key: str = typer.Argument(..., help="Product key to inspect."),
+    db: Path = typer.Option(Path("commercelens.db"), "--db", help="SQLite database path."),
+    limit: int = typer.Option(20, "--limit", min=1, max=1000, help="Maximum snapshots to return."),
+    out: Path | None = typer.Option(None, "--out", "-o", help="Optional JSON output path."),
+) -> None:
+    """Show price history for a product key."""
+    store = PriceSnapshotStore(db)
+    snapshots = [snapshot.__dict__ for snapshot in store.history(product_key, limit=limit)]
+    _write_or_print(snapshots, out=out)
+
+
+@app.command()
+def changes(
+    db: Path = typer.Option(Path("commercelens.db"), "--db", help="SQLite database path."),
+    out: Path | None = typer.Option(None, "--out", "-o", help="Optional JSON output path."),
+) -> None:
+    """Show detected latest price and availability changes."""
+    store = PriceSnapshotStore(db)
+    detected = [change.__dict__ for change in store.detect_changes()]
+    _write_or_print(detected, out=out)
 
 
 @app.command()

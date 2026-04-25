@@ -1,0 +1,2 @@
+https://example.com/products/sample
+https://example.com/products/another-sample

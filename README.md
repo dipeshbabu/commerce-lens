@@ -2,17 +2,17 @@
 
 Open-source product, catalog, and price intelligence extraction for developers.
 
-CommerceLens turns messy e-commerce pages into structured product and listing data using schema.org JSON-LD parsing, OpenGraph metadata, DOM heuristics, confidence scoring, catalog crawling, optional browser rendering, and a clean Python SDK / CLI / FastAPI interface.
+CommerceLens turns messy e-commerce pages into structured product, listing, and price-history data using schema.org JSON-LD parsing, OpenGraph metadata, DOM heuristics, confidence scoring, catalog crawling, optional browser rendering, SQLite snapshots, change detection, and a clean Python SDK / CLI / FastAPI interface.
 
 > Goal: commerce-ready product data, not just raw HTML.
 
 ## Why CommerceLens?
 
-Most scraping tools return raw HTML, Markdown, or brittle selector outputs. CommerceLens is designed around normalized commerce objects: product name, brand, price, currency, availability, images, description, SKU, ratings, review counts, canonical URL, listing product cards, confidence scores, and extraction provenance.
+Most scraping tools return raw HTML, Markdown, or brittle selector outputs. CommerceLens is designed around normalized commerce objects: product name, brand, price, currency, availability, images, description, SKU, ratings, review counts, canonical URL, listing product cards, confidence scores, extraction provenance, price history, and product-level change events.
 
-CommerceLens is currently in early v0.3 development. The current release focuses on product page extraction, listing/category extraction, basic catalog crawling, JSONL/CSV export, and optional Playwright rendering for JavaScript-heavy pages. Price monitoring and LLM fallback are planned next.
+CommerceLens is currently in early v0.4 development. The current release focuses on product page extraction, listing/category extraction, basic catalog crawling, JSONL/CSV export, optional Playwright rendering for JavaScript-heavy pages, and local price intelligence through SQLite-backed product snapshots.
 
-## Features in v0.3
+## Features in v0.4
 
 - Product page extraction
 - Listing/category page extraction
@@ -30,6 +30,14 @@ CommerceLens is currently in early v0.3 development. The current release focuses
 - Image extraction
 - Field-level confidence scores
 - Source provenance for extracted fields
+- SQLite product snapshot storage
+- Product identity keys
+- Price history lookup
+- Price drop detection
+- Price increase detection
+- Availability change detection
+- Back-in-stock detection
+- Batch product monitoring
 - JSON, JSONL, and CSV export
 - Python SDK
 - CLI
@@ -38,7 +46,7 @@ CommerceLens is currently in early v0.3 development. The current release focuses
 
 ## Installation
 
-Static extraction only:
+Static extraction and price monitoring:
 
 ```bash
 pip install -e .
@@ -81,6 +89,43 @@ result = extract_product(
     screenshot_path="debug/product.png",
     html_snapshot_path="debug/product.html",
 )
+```
+
+Monitor a product price:
+
+```python
+from commercelens import monitor_product
+
+result = monitor_product("https://example.com/products/sample", db_path="prices.db")
+print(result.product_key)
+print(result.has_change)
+print(result.change)
+```
+
+Monitor many product URLs:
+
+```python
+from commercelens import monitor_products
+
+batch = monitor_products(
+    [
+        "https://example.com/products/sample",
+        "https://example.com/products/another-sample",
+    ],
+    db_path="prices.db",
+)
+print(batch.changes)
+```
+
+Read price history:
+
+```python
+from commercelens import PriceSnapshotStore
+
+store = PriceSnapshotStore("prices.db")
+history = store.history("PRODUCT_KEY_FROM_MONITOR_RESULT")
+for snapshot in history:
+    print(snapshot.captured_at, snapshot.amount, snapshot.currency, snapshot.availability)
 ```
 
 Extract from local or already-fetched HTML:
@@ -152,6 +197,32 @@ commercelens product https://example.com/products/sample \
   --render \
   --screenshot debug/product.png \
   --html-snapshot debug/product.html
+```
+
+Save a price snapshot and detect changes:
+
+```bash
+commercelens monitor https://example.com/products/sample --db prices.db
+```
+
+Run it again later. If the price or availability changed, CommerceLens returns a change object.
+
+Batch monitor many products:
+
+```bash
+commercelens monitor-batch examples/products.txt --db prices.db --out monitor_result.json
+```
+
+Show price history for a product key:
+
+```bash
+commercelens history PRODUCT_KEY_FROM_MONITOR_RESULT --db prices.db
+```
+
+Show latest detected changes across tracked products:
+
+```bash
+commercelens changes --db prices.db
 ```
 
 Extract product cards from a listing page:
@@ -229,6 +300,38 @@ curl -X POST http://127.0.0.1:8000/v1/extract/product \
   -d '{"url":"https://example.com/products/sample", "render": true, "screenshot_path":"debug/product.png", "html_snapshot_path":"debug/product.html"}'
 ```
 
+Monitor a product:
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/monitor/product \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com/products/sample", "db_path":"prices.db"}'
+```
+
+Batch monitor products:
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/monitor/batch \
+  -H "Content-Type: application/json" \
+  -d '{"urls":["https://example.com/products/sample", "https://example.com/products/another-sample"], "db_path":"prices.db"}'
+```
+
+Read price history by product key:
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/monitor/history \
+  -H "Content-Type: application/json" \
+  -d '{"product_key":"PRODUCT_KEY_FROM_MONITOR_RESULT", "db_path":"prices.db"}'
+```
+
+Read price history by URL:
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/monitor/history \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com/products/sample", "db_path":"prices.db"}'
+```
+
 Extract a listing page:
 
 ```bash
@@ -277,6 +380,14 @@ playwright install chromium
 commercelens product https://example.com/products/sample --render
 ```
 
+To test price monitoring locally:
+
+```bash
+commercelens monitor https://example.com/products/sample --db prices.db
+commercelens history PRODUCT_KEY_FROM_MONITOR_RESULT --db prices.db
+commercelens changes --db prices.db
+```
+
 ## Product roadmap
 
 ### v0.1: Product extraction core
@@ -308,10 +419,11 @@ commercelens product https://example.com/products/sample --render
 - Price history
 - Change detection
 - Back-in-stock detection
+- Batch monitoring
+
+### v0.5: Alerts and LLM fallback
+
 - Webhook/email alert hooks
-
-### v0.5: LLM fallback
-
 - Schema-constrained extraction fallback
 - Natural language extraction instructions
 - Field-level validation against deterministic extractors
