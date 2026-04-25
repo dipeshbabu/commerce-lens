@@ -5,17 +5,19 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from commercelens.extractors.product import extract_product
+from commercelens.storage.backends import ProductSnapshotBackend, StorageConfig, make_snapshot_backend
 from commercelens.storage.price_store import (
     PriceChange,
     PriceSnapshotStore,
     ProductSnapshot,
+    compare_snapshots,
     snapshot_from_result,
 )
 
 
 class MonitorResult(BaseModel):
     product_key: str
-    snapshot_id: int
+    snapshot_id: int | None = None
     snapshot: ProductSnapshot
     change: PriceChange | None = None
     has_change: bool = False
@@ -37,17 +39,29 @@ def monitor_product(
     url: str,
     db_path: str | Path = "commercelens.db",
     render: bool = False,
+    storage_config: StorageConfig | None = None,
+    backend: ProductSnapshotBackend | None = None,
 ) -> MonitorResult:
-    store = PriceSnapshotStore(db_path)
     extraction = extract_product(url, render=render)
     snapshot = snapshot_from_result(extraction)
+
+    if backend or storage_config:
+        snapshot_backend = backend or make_snapshot_backend(storage_config)
+        previous = snapshot_backend.latest(snapshot.product_key)
+        snapshot_backend.add_snapshot(snapshot)
+        change = compare_snapshots(previous, snapshot) if previous else None
+        return MonitorResult(
+            product_key=snapshot.product_key,
+            snapshot_id=None,
+            snapshot=snapshot,
+            change=change,
+            has_change=change is not None,
+        )
+
+    store = PriceSnapshotStore(db_path)
     previous = store.latest_snapshot(snapshot.product_key)
     snapshot_id = store.add_snapshot(snapshot)
-    change = None
-    if previous:
-        from commercelens.storage.price_store import compare_snapshots
-
-        change = compare_snapshots(previous, snapshot)
+    change = compare_snapshots(previous, snapshot) if previous else None
     return MonitorResult(
         product_key=snapshot.product_key,
         snapshot_id=snapshot_id,
@@ -61,14 +75,23 @@ def monitor_products(
     urls: list[str],
     db_path: str | Path = "commercelens.db",
     render: bool = False,
+    storage_config: StorageConfig | None = None,
+    backend: ProductSnapshotBackend | None = None,
 ) -> BatchMonitorResult:
     results: list[MonitorResult] = []
     changes: list[PriceChange] = []
     warnings: list[str] = []
 
+    snapshot_backend = backend or (make_snapshot_backend(storage_config) if storage_config else None)
     for url in urls:
         try:
-            result = monitor_product(url, db_path=db_path, render=render)
+            result = monitor_product(
+                url,
+                db_path=db_path,
+                render=render,
+                storage_config=None,
+                backend=snapshot_backend,
+            )
             results.append(result)
             if result.change:
                 changes.append(result.change)
