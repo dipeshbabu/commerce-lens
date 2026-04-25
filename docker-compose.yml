@@ -1,0 +1,22 @@
+services:
+  api:
+    build: .
+    command: uvicorn commercelens.api.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    environment:
+      COMMERCELENS_JOBS_DB: /data/commercelens_jobs.db
+      COMMERCELENS_REQUIRE_API_KEY: "false"
+    volumes:
+      - commercelens_data:/data
+
+  worker:
+    build: .
+    command: commercelens worker --jobs-db /data/commercelens_jobs.db --poll-seconds 60
+    environment:
+      COMMERCELENS_JOBS_DB: /data/commercelens_jobs.db
+    volumes:
+      - commercelens_data:/data
+
+volumes:
+  commercelens_data:
