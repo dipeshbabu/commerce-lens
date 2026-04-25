@@ -131,8 +131,10 @@ class JobStore:
         updates = request.model_dump(exclude_unset=True)
         for key, value in updates.items():
             setattr(job, key, value)
-        if "interval_minutes" in updates or "schedule_kind" in updates or not job.next_run_at:
+        if job.status == JobStatus.active and ("interval_minutes" in updates or "schedule_kind" in updates or not job.next_run_at):
             job.next_run_at = self.compute_next_run(job)
+        if job.status != JobStatus.active:
+            job.next_run_at = None
         return self.save_job(job)
 
     def delete_job(self, job_id: str) -> bool:
@@ -157,14 +159,15 @@ class JobStore:
     def mark_job_run_started(self, job: MonitoringJob) -> JobRun:
         run = JobRun(job_id=job.id, status=RunStatus.running, started_at=utc_now_iso())
         self.save_run(run)
-        job.status = JobStatus.running
         job.last_run_at = run.started_at
+        job.next_run_at = None
         self.save_job(job)
         return run
 
     def complete_run(self, run: JobRun, result: dict, event_count: int, delivery_count: int, warning_count: int) -> JobRun:
-        run.status = RunStatus.success
+        run.status = RunStatus.succeeded
         run.finished_at = utc_now_iso()
+        run.duration_ms = duration_ms(run.started_at, run.finished_at)
         run.result = result
         run.event_count = event_count
         run.delivery_count = delivery_count
@@ -172,7 +175,6 @@ class JobStore:
         self.save_run(run)
         job = self.get_job(run.job_id)
         if job:
-            job.status = JobStatus.active if job.schedule_kind == ScheduleKind.interval else JobStatus.completed
             job.last_error = None
             job.next_run_at = self.compute_next_run(job) if job.status == JobStatus.active else None
             self.save_job(job)
@@ -181,18 +183,17 @@ class JobStore:
     def fail_run(self, run: JobRun, error: str) -> JobRun:
         run.status = RunStatus.failed
         run.finished_at = utc_now_iso()
+        run.duration_ms = duration_ms(run.started_at, run.finished_at)
         run.error = error
         self.save_run(run)
         job = self.get_job(run.job_id)
         if job:
-            job.status = JobStatus.active
             job.last_error = error
-            job.next_run_at = self.compute_retry_run(job, run.attempt)
+            job.next_run_at = self.compute_retry_run(job, run.attempt) if job.status == JobStatus.active else None
             self.save_job(job)
         return run
 
     def save_run(self, run: JobRun) -> JobRun:
-        created_at = run.started_at or utc_now_iso()
         with self._connect() as conn:
             conn.execute(
                 """
@@ -211,7 +212,7 @@ class JobStore:
                     run.status.value if isinstance(run.status, RunStatus) else run.status,
                     run.started_at,
                     run.finished_at,
-                    created_at,
+                    run.created_at,
                 ),
             )
         return run
@@ -272,18 +273,28 @@ class JobStore:
         return key
 
     def compute_next_run(self, job: MonitoringJob) -> str | None:
-        if job.schedule_kind == ScheduleKind.manual:
+        if job.schedule_kind == ScheduleKind.manual or job.status != JobStatus.active:
             return None
         base = datetime.now(timezone.utc)
         return (base + timedelta(minutes=job.interval_minutes)).replace(microsecond=0).isoformat()
 
-    def compute_retry_run(self, job: MonitoringJob, attempt: int) -> str:
+    def compute_retry_run(self, job: MonitoringJob, attempt: int) -> str | None:
+        if attempt > job.max_retries:
+            return self.compute_next_run(job)
         delay = job.retry_backoff_seconds * max(1, attempt)
         return (datetime.now(timezone.utc) + timedelta(seconds=delay)).replace(microsecond=0).isoformat()
 
 
 def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def duration_ms(started_at: str | None, finished_at: str | None) -> int | None:
+    if not started_at or not finished_at:
+        return None
+    start = datetime.fromisoformat(started_at)
+    finish = datetime.fromisoformat(finished_at)
+    return int((finish - start).total_seconds() * 1000)
 
 
 def dumps_pretty(payload: object) -> str:
