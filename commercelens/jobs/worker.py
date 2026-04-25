@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from typing import Any
 
 from commercelens.alerts.runner import run_monitor_config
 from commercelens.jobs.models import JobRun, WorkerTickResult
@@ -9,7 +10,7 @@ from commercelens.jobs.store import JobStore
 
 
 class MonitoringWorker:
-    def __init__(self, store: JobStore | None = None, store_path: str | Path = "commercelens_jobs.db") -> None:
+    def __init__(self, store: Any | None = None, store_path: str | Path = "commercelens_jobs.db") -> None:
         self.store = store or JobStore(store_path)
 
     def tick(self, limit: int = 25, dry_run: bool = False, deliver: bool = True) -> WorkerTickResult:
@@ -57,7 +58,7 @@ class MonitoringWorker:
             time.sleep(poll_seconds)
 
 
-def run_job_now(store: JobStore, job_id: str, dry_run: bool = False, deliver: bool = True) -> JobRun:
+def run_job_now(store: Any, job_id: str, dry_run: bool = False, deliver: bool = True) -> JobRun:
     job = store.get_job(job_id)
     if not job:
         raise ValueError(f"Job not found: {job_id}")

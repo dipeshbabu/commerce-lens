@@ -1,6 +1,6 @@
 [project]
 name = "commercelens"
-version = "0.7.0"
+version = "0.8.0"
 description = "Open-source product, catalog, monitoring, alerting, matching, and price intelligence extraction for developers."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -18,7 +18,9 @@ keywords = [
   "product-matching",
   "commerce-intelligence",
   "monitoring",
-  "price-tracking"
+  "price-tracking",
+  "usage-metering",
+  "hosted-api"
 ]
 dependencies = [
   "beautifulsoup4>=4.12.0",

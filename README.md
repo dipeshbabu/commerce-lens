@@ -2,17 +2,17 @@
 
 Open-source product, catalog, monitoring, alerting, matching, and price intelligence extraction for developers.
 
-CommerceLens turns messy e-commerce pages into structured product, listing, price-history, alert, and product-matching data using schema.org JSON-LD parsing, OpenGraph metadata, DOM heuristics, confidence scoring, catalog crawling, optional browser rendering, SQLite/Postgres snapshots, change detection, configurable alert rules, dataset connectors, persistent monitoring jobs, worker execution, API keys, and a clean Python SDK / CLI / FastAPI interface.
+CommerceLens turns messy e-commerce pages into structured product, listing, price-history, alert, and product-matching data using schema.org JSON-LD parsing, OpenGraph metadata, DOM heuristics, confidence scoring, catalog crawling, optional browser rendering, SQLite/Postgres snapshots, change detection, configurable alert rules, dataset connectors, persistent monitoring jobs, worker execution, API keys, tenant-scoped usage metering, and a clean Python SDK / CLI / FastAPI interface.
 
 > Goal: commerce-ready product intelligence, not just raw HTML.
 
 ## Why CommerceLens?
 
-Most scraping tools return raw HTML, Markdown, screenshots, or brittle selector outputs. CommerceLens is designed around normalized commerce objects: product name, brand, price, currency, availability, images, description, SKU, ratings, review counts, canonical URL, listing product cards, confidence scores, extraction provenance, price history, product-level change events, alerts, cross-store product matches, persistent monitor jobs, and run history.
+Most scraping tools return raw HTML, Markdown, screenshots, or brittle selector outputs. CommerceLens is designed around normalized commerce objects: product name, brand, price, currency, availability, images, description, SKU, ratings, review counts, canonical URL, listing product cards, confidence scores, extraction provenance, price history, product-level change events, alerts, cross-store product matches, persistent monitor jobs, run history, tenant-aware API keys, and metered hosted usage.
 
-CommerceLens is currently in early v0.7 development. The current release focuses on product page extraction, listing/category extraction, catalog crawling, JSONL/CSV export, optional Playwright rendering for JavaScript-heavy pages, local price intelligence through SQLite-backed product snapshots, optional PostgreSQL storage for hosted deployments, config-driven alert monitoring, dataset import/export, product matching, persistent monitoring jobs, worker execution, API keys, and Docker deployment.
+CommerceLens is currently in early v0.8 development. The current release focuses on product page extraction, listing/category extraction, catalog crawling, JSONL/CSV export, optional Playwright rendering for JavaScript-heavy pages, local price intelligence through SQLite-backed product snapshots, optional PostgreSQL storage for hosted deployments, config-driven alert monitoring, dataset import/export, product matching, persistent monitoring jobs, worker execution, API keys, usage events, usage summaries, and Docker deployment.
 
-## Features in v0.7
+## Features in v0.8
 
 - Product page extraction
 - Listing/category page extraction
@@ -53,11 +53,14 @@ CommerceLens is currently in early v0.7 development. The current release focuses
 - Worker tick and long-running worker loop
 - Job run history with status, errors, durations, events, deliveries, and warnings
 - Optional API key authentication for hosted deployments
+- Tenant context through account_id, project_id, owner, and api_key_id
+- Usage event logging and usage summaries
+- SQLite or Postgres job/run/API-key/usage store
 - Docker and docker-compose deployment files
 - Python SDK
 - CLI
 - FastAPI API
-- Lightweight default install; browser and Postgres support are optional
+- Lightweight default install; browser, data, and Postgres support are optional
 
 ## Installation
 
@@ -84,6 +87,49 @@ Or install from requirements:
 
 ```bash
 pip install -r requirements.txt
+```
+
+## Hosted backend quickstart
+
+For local development, CommerceLens uses SQLite by default. For hosted deployments, use Postgres for jobs, runs, API keys, and usage metering:
+
+```bash
+export COMMERCELENS_STORE_BACKEND=postgres
+export COMMERCELENS_DATABASE_URL="postgresql://user:password@localhost:5432/commercelens"
+export COMMERCELENS_REQUIRE_API_KEY=true
+```
+
+Create a tenant-scoped API key:
+
+```bash
+commercelens create-api-key \
+  --name "demo customer" \
+  --account-id acct_demo \
+  --project-id proj_default \
+  --owner demo@example.com
+```
+
+Use the returned token with hosted routes:
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/extract/product \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: cl_REPLACE_WITH_TOKEN" \
+  -d '{"url":"https://example.com/products/sample"}'
+```
+
+Inspect usage:
+
+```bash
+commercelens usage-summary --account-id acct_demo --project-id proj_default
+commercelens usage-events --account-id acct_demo --project-id proj_default --limit 20
+```
+
+Run API and worker processes:
+
+```bash
+commercelens serve --host 0.0.0.0 --port 8000
+commercelens worker --poll-seconds 60
 ```
 
 ## Python SDK
@@ -121,7 +167,7 @@ result = monitor_product(
 )
 ```
 
-Use PostgreSQL for hosted deployments:
+Use PostgreSQL for hosted product snapshots:
 
 ```python
 from commercelens import StorageConfig, monitor_product
@@ -252,14 +298,16 @@ Create a persistent monitoring job:
 ```bash
 commercelens create-job commercelens.monitor.json \
   --name "Watch competitor prices" \
-  --interval-minutes 360
+  --interval-minutes 360 \
+  --account-id acct_demo \
+  --project-id proj_default
 ```
 
 List jobs and runs:
 
 ```bash
-commercelens list-jobs
-commercelens list-runs
+commercelens list-jobs --account-id acct_demo --project-id proj_default
+commercelens list-runs --account-id acct_demo --project-id proj_default
 ```
 
 Run a job immediately:
@@ -283,7 +331,14 @@ commercelens worker --poll-seconds 60
 Create an API key for hosted deployments:
 
 ```bash
-commercelens create-api-key --name "local dev"
+commercelens create-api-key --name "local dev" --account-id acct_demo --project-id proj_default
+```
+
+Summarize usage:
+
+```bash
+commercelens usage-summary --account-id acct_demo --project-id proj_default
+commercelens usage-events --account-id acct_demo --project-id proj_default --metric product_extract
 ```
 
 Export latest tracked products:
@@ -460,6 +515,16 @@ Run due jobs once:
 curl -X POST "http://127.0.0.1:8000/v1/worker/tick?dry_run=true"
 ```
 
+List tenant usage:
+
+```bash
+curl http://127.0.0.1:8000/v1/usage/summary \
+  -H "X-API-Key: cl_REPLACE_WITH_TOKEN"
+
+curl http://127.0.0.1:8000/v1/usage/events?limit=20 \
+  -H "X-API-Key: cl_REPLACE_WITH_TOKEN"
+```
+
 Match product records:
 
 ```bash
@@ -511,13 +576,15 @@ To test product matching:
 commercelens match-records examples/products_a.csv examples/products_b.csv --threshold 0.72
 ```
 
-To test hosted jobs:
+To test hosted jobs and usage locally with SQLite:
 
 ```bash
 commercelens init-config commercelens.monitor.json
-commercelens create-job commercelens.monitor.json --name "demo" --interval-minutes 1
+commercelens create-api-key --name "demo" --account-id acct_demo --project-id proj_default
+commercelens create-job commercelens.monitor.json --name "demo" --interval-minutes 1 --account-id acct_demo --project-id proj_default
 commercelens worker-tick --dry-run
-commercelens list-runs
+commercelens usage-summary --account-id acct_demo --project-id proj_default
+commercelens list-runs --account-id acct_demo --project-id proj_default
 ```
 
 ## Product roadmap
@@ -579,9 +646,17 @@ commercelens list-runs
 - API keys
 - hosted deployment template
 
+### v0.8: Production hosted backend
+
+- Tenant-aware API key context
+- Postgres job/run/API-key/usage store
+- Metered extraction, crawling, matching, monitoring, and alert routes
+- Usage event and usage summary endpoints
+- Hosted CLI workflow for API keys, jobs, workers, and usage
+
 ## Positioning
 
-CommerceLens is not trying to be a generic scraper first. It is a commerce data engine: a focused toolkit for product, catalog, monitoring, alerting, matching, scheduled jobs, and price intelligence.
+CommerceLens is not trying to be a generic scraper first. It is a commerce data engine: a focused toolkit for product, catalog, monitoring, alerting, matching, scheduled jobs, usage metering, and price intelligence.
 
 ## License
 
