@@ -1,18 +1,18 @@
 # CommerceLens
 
-Open-source product, catalog, and price intelligence extraction for developers.
+Open-source product, catalog, monitoring, and price intelligence extraction for developers.
 
-CommerceLens turns messy e-commerce pages into structured product, listing, and price-history data using schema.org JSON-LD parsing, OpenGraph metadata, DOM heuristics, confidence scoring, catalog crawling, optional browser rendering, SQLite snapshots, change detection, and a clean Python SDK / CLI / FastAPI interface.
+CommerceLens turns messy e-commerce pages into structured product, listing, price-history, and alert data using schema.org JSON-LD parsing, OpenGraph metadata, DOM heuristics, confidence scoring, catalog crawling, optional browser rendering, SQLite snapshots, change detection, configurable alert rules, and a clean Python SDK / CLI / FastAPI interface.
 
-> Goal: commerce-ready product data, not just raw HTML.
+> Goal: commerce-ready product intelligence, not just raw HTML.
 
 ## Why CommerceLens?
 
-Most scraping tools return raw HTML, Markdown, or brittle selector outputs. CommerceLens is designed around normalized commerce objects: product name, brand, price, currency, availability, images, description, SKU, ratings, review counts, canonical URL, listing product cards, confidence scores, extraction provenance, price history, and product-level change events.
+Most scraping tools return raw HTML, Markdown, screenshots, or brittle selector outputs. CommerceLens is designed around normalized commerce objects: product name, brand, price, currency, availability, images, description, SKU, ratings, review counts, canonical URL, listing product cards, confidence scores, extraction provenance, price history, product-level change events, and alerts.
 
-CommerceLens is currently in early v0.4 development. The current release focuses on product page extraction, listing/category extraction, basic catalog crawling, JSONL/CSV export, optional Playwright rendering for JavaScript-heavy pages, and local price intelligence through SQLite-backed product snapshots.
+CommerceLens is currently in early v0.5 development. The current release focuses on product page extraction, listing/category extraction, catalog crawling, JSONL/CSV export, optional Playwright rendering for JavaScript-heavy pages, local price intelligence through SQLite-backed product snapshots, and config-driven alert monitoring.
 
-## Features in v0.4
+## Features in v0.5
 
 - Product page extraction
 - Listing/category page extraction
@@ -38,6 +38,10 @@ CommerceLens is currently in early v0.4 development. The current release focuses
 - Availability change detection
 - Back-in-stock detection
 - Batch product monitoring
+- Config-driven alert rules
+- Alert delivery to stdout, file, webhook, Slack, and email
+- Dry-run alert payload generation
+- GitHub Actions scheduled monitoring workflow
 - JSON, JSONL, and CSV export
 - Python SDK
 - CLI
@@ -46,7 +50,7 @@ CommerceLens is currently in early v0.4 development. The current release focuses
 
 ## Installation
 
-Static extraction and price monitoring:
+Static extraction, price monitoring, and alerts:
 
 ```bash
 pip install -e .
@@ -78,19 +82,6 @@ print(result.product.price.amount)
 print(result.product.availability)
 ```
 
-Render a JavaScript-heavy product page before extraction:
-
-```python
-from commercelens import extract_product
-
-result = extract_product(
-    "https://example.com/products/sample",
-    render=True,
-    screenshot_path="debug/product.png",
-    html_snapshot_path="debug/product.html",
-)
-```
-
 Monitor a product price:
 
 ```python
@@ -102,19 +93,14 @@ print(result.has_change)
 print(result.change)
 ```
 
-Monitor many product URLs:
+Run a monitor config and build alert payloads without delivering them:
 
 ```python
-from commercelens import monitor_products
+from commercelens import load_monitor_config, run_monitor_config
 
-batch = monitor_products(
-    [
-        "https://example.com/products/sample",
-        "https://example.com/products/another-sample",
-    ],
-    db_path="prices.db",
-)
-print(batch.changes)
+config = load_monitor_config("examples/monitor_config.json")
+result = run_monitor_config(config, dry_run=True)
+print(result.events)
 ```
 
 Read price history:
@@ -128,15 +114,6 @@ for snapshot in history:
     print(snapshot.captured_at, snapshot.amount, snapshot.currency, snapshot.availability)
 ```
 
-Extract from local or already-fetched HTML:
-
-```python
-from commercelens import extract_product_from_html
-
-html = """<html>...</html>"""
-result = extract_product_from_html(html, url="https://example.com/products/sample")
-```
-
 Extract a listing/category page:
 
 ```python
@@ -145,19 +122,6 @@ from commercelens import extract_listing
 listing = extract_listing("https://example.com/collections/shoes")
 for item in listing.products:
     print(item.name, item.price, item.url)
-```
-
-Render a JavaScript-heavy listing page before extraction:
-
-```python
-from commercelens import extract_listing
-
-listing = extract_listing(
-    "https://example.com/collections/shoes",
-    render=True,
-    screenshot_path="debug/listing.png",
-    html_snapshot_path="debug/listing.html",
-)
 ```
 
 Crawl a catalog by following next-page links:
@@ -169,16 +133,16 @@ catalog = crawl_catalog("https://example.com/collections/shoes", max_pages=5)
 print(catalog.product_count)
 ```
 
-Render each catalog page during crawl and save debug artifacts:
+Render dynamic pages:
 
 ```python
-from commercelens import crawl_catalog
+from commercelens import extract_product
 
-catalog = crawl_catalog(
-    "https://example.com/collections/shoes",
-    max_pages=5,
+result = extract_product(
+    "https://example.com/products/sample",
     render=True,
-    debug_dir="debug/catalog",
+    screenshot_path="debug/product.png",
+    html_snapshot_path="debug/product.html",
 )
 ```
 
@@ -205,12 +169,28 @@ Save a price snapshot and detect changes:
 commercelens monitor https://example.com/products/sample --db prices.db
 ```
 
-Run it again later. If the price or availability changed, CommerceLens returns a change object.
-
 Batch monitor many products:
 
 ```bash
 commercelens monitor-batch examples/products.txt --db prices.db --out monitor_result.json
+```
+
+Create an alert config:
+
+```bash
+commercelens init-config commercelens.monitor.json
+```
+
+Run alerts in dry-run mode:
+
+```bash
+commercelens run commercelens.monitor.json --dry-run
+```
+
+Run alerts and deliver them:
+
+```bash
+commercelens run commercelens.monitor.json
 ```
 
 Show price history for a product key:
@@ -231,15 +211,6 @@ Extract product cards from a listing page:
 commercelens listing https://example.com/collections/shoes
 ```
 
-Render a listing page and export products:
-
-```bash
-commercelens listing https://example.com/collections/shoes \
-  --render \
-  --format jsonl \
-  --out products.jsonl
-```
-
 Export listing products as JSONL or CSV:
 
 ```bash
@@ -253,22 +224,40 @@ Crawl a catalog:
 commercelens crawl https://example.com/collections/shoes --max-pages 5 --format jsonl --out catalog.jsonl
 ```
 
-Render each crawled catalog page and save debug artifacts:
-
-```bash
-commercelens crawl https://example.com/collections/shoes \
-  --max-pages 5 \
-  --render \
-  --debug-dir debug/catalog \
-  --format jsonl \
-  --out catalog.jsonl
-```
-
 Run the API server:
 
 ```bash
 commercelens serve --host 0.0.0.0 --port 8000 --reload
 ```
+
+## Alert config example
+
+```json
+{
+  "db_path": "prices.db",
+  "render": false,
+  "targets": [
+    {"url": "https://example.com/products/sample", "tags": ["demo"]}
+  ],
+  "rules": [
+    {
+      "name": "major-price-drop",
+      "condition": "percent_drop_at_least",
+      "threshold": 10,
+      "destinations": [
+        {"type": "stdout"},
+        {"type": "file", "file_path": "alerts.jsonl"}
+      ]
+    }
+  ]
+}
+```
+
+Supported alert conditions include `any_change`, `price_drop`, `price_increase`, `back_in_stock`, `availability_change`, `price_below`, `price_above`, `percent_drop_at_least`, and `percent_increase_at_least`.
+
+Supported destinations include `stdout`, `file`, `webhook`, `slack`, and `email`.
+
+See `docs/alerts.md` for the complete alert monitoring guide.
 
 ## FastAPI API
 
@@ -292,14 +281,6 @@ curl -X POST http://127.0.0.1:8000/v1/extract/product \
   -d '{"url":"https://example.com/products/sample"}'
 ```
 
-Render and extract a product:
-
-```bash
-curl -X POST http://127.0.0.1:8000/v1/extract/product \
-  -H "Content-Type: application/json" \
-  -d '{"url":"https://example.com/products/sample", "render": true, "screenshot_path":"debug/product.png", "html_snapshot_path":"debug/product.html"}'
-```
-
 Monitor a product:
 
 ```bash
@@ -308,60 +289,27 @@ curl -X POST http://127.0.0.1:8000/v1/monitor/product \
   -d '{"url":"https://example.com/products/sample", "db_path":"prices.db"}'
 ```
 
-Batch monitor products:
+Run alert monitoring with inline config:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/v1/monitor/batch \
+curl -X POST http://127.0.0.1:8000/v1/alerts/run \
   -H "Content-Type: application/json" \
-  -d '{"urls":["https://example.com/products/sample", "https://example.com/products/another-sample"], "db_path":"prices.db"}'
+  -d '{
+    "dry_run": true,
+    "config": {
+      "db_path": "prices.db",
+      "targets": [{"url": "https://example.com/products/sample"}],
+      "rules": [{"name": "any", "condition": "any_change", "destinations": [{"type": "stdout"}]}]
+    }
+  }'
 ```
 
-Read price history by product key:
+Run alert monitoring from a file path:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/v1/monitor/history \
+curl -X POST http://127.0.0.1:8000/v1/alerts/run-file \
   -H "Content-Type: application/json" \
-  -d '{"product_key":"PRODUCT_KEY_FROM_MONITOR_RESULT", "db_path":"prices.db"}'
-```
-
-Read price history by URL:
-
-```bash
-curl -X POST http://127.0.0.1:8000/v1/monitor/history \
-  -H "Content-Type: application/json" \
-  -d '{"url":"https://example.com/products/sample", "db_path":"prices.db"}'
-```
-
-Extract a listing page:
-
-```bash
-curl -X POST http://127.0.0.1:8000/v1/extract/listing \
-  -H "Content-Type: application/json" \
-  -d '{"url":"https://example.com/collections/shoes"}'
-```
-
-Render and extract a listing page:
-
-```bash
-curl -X POST http://127.0.0.1:8000/v1/extract/listing \
-  -H "Content-Type: application/json" \
-  -d '{"url":"https://example.com/collections/shoes", "render": true, "screenshot_path":"debug/listing.png", "html_snapshot_path":"debug/listing.html"}'
-```
-
-Crawl a catalog:
-
-```bash
-curl -X POST http://127.0.0.1:8000/v1/crawl/catalog \
-  -H "Content-Type: application/json" \
-  -d '{"url":"https://example.com/collections/shoes", "max_pages": 5}'
-```
-
-Render crawled catalog pages:
-
-```bash
-curl -X POST http://127.0.0.1:8000/v1/crawl/catalog \
-  -H "Content-Type: application/json" \
-  -d '{"url":"https://example.com/collections/shoes", "max_pages": 5, "render": true, "debug_dir":"debug/catalog"}'
+  -d '{"path":"examples/monitor_config.json", "dry_run": true}'
 ```
 
 ## Development
@@ -380,12 +328,13 @@ playwright install chromium
 commercelens product https://example.com/products/sample --render
 ```
 
-To test price monitoring locally:
+To test price monitoring and alerts locally:
 
 ```bash
 commercelens monitor https://example.com/products/sample --db prices.db
 commercelens history PRODUCT_KEY_FROM_MONITOR_RESULT --db prices.db
-commercelens changes --db prices.db
+commercelens init-config commercelens.monitor.json
+commercelens run commercelens.monitor.json --dry-run
 ```
 
 ## Product roadmap
@@ -421,16 +370,24 @@ commercelens changes --db prices.db
 - Back-in-stock detection
 - Batch monitoring
 
-### v0.5: Alerts and LLM fallback
+### v0.5: Alerts and scheduled monitoring
 
-- Webhook/email alert hooks
-- Schema-constrained extraction fallback
-- Natural language extraction instructions
-- Field-level validation against deterministic extractors
+- Alert rules
+- Webhook, Slack, email, file, and stdout delivery
+- Dry-run alert payloads
+- GitHub Actions scheduled monitoring
+- API and SDK alert runner
+
+### v0.6: Hosted-ready data layer and connectors
+
+- PostgreSQL storage backend
+- Queue-based monitoring jobs
+- Product matching across domains
+- More export/connectors
 
 ## Positioning
 
-CommerceLens is not trying to be a generic scraper first. It is a commerce data engine: a focused toolkit for product, catalog, and price intelligence.
+CommerceLens is not trying to be a generic scraper first. It is a commerce data engine: a focused toolkit for product, catalog, monitoring, and price intelligence.
 
 ## License
 
