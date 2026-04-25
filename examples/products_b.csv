@@ -1,0 +1,3 @@
+url,name,brand,amount,currency,availability,image_url
+https://shop-b.example/item/air-max-90,Nike Air Max 90 Shoes,Nike,125,USD,in_stock,https://shop-b.example/nike.jpg
+https://shop-b.example/item/wh-1000xm5,Sony WH1000XM5 Noise Canceling Headphones,Sony,389,USD,in_stock,https://shop-b.example/sony.jpg
