@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import Depends, FastAPI, HTTPException
 
 from commercelens.alerts.runner import MonitorRunResult, run_monitor_config, run_monitor_config_file
-from commercelens.api.auth import get_job_store, require_api_key
+from commercelens.api.auth import get_job_store, require_admin_token, require_api_key
 from commercelens.api.quota import quota_decision, require_quota, require_scope
 from commercelens.connectors.datasets import DatasetLoadResult
 from commercelens.core.crawler import CatalogCrawlResult, crawl_catalog
@@ -226,7 +226,7 @@ def worker_tick_endpoint(limit: int = 25, dry_run: bool = False, deliver: bool =
     return MonitoringWorker(store=store).tick(limit=limit, dry_run=dry_run, deliver=deliver)
 
 
-@app.post("/v1/api-keys", response_model=ApiKeyCreateResult)
+@app.post("/v1/api-keys", response_model=ApiKeyCreateResult, dependencies=[Depends(require_admin_token)])
 def create_api_key_endpoint(request: ApiKeyCreate, store: JobStore = Depends(get_job_store)) -> ApiKeyCreateResult:
     return store.create_api_key(request)
 
