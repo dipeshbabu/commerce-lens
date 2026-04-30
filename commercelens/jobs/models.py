@@ -128,12 +128,21 @@ class WorkerTickResult(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class BillingPlan(str, Enum):
+    free = "free"
+    developer = "developer"
+    team = "team"
+    enterprise = "enterprise"
+
+
 class ApiKeyCreate(BaseModel):
     name: str
     owner: str | None = None
     account_id: str | None = None
     project_id: str | None = None
     scopes: list[str] = Field(default_factory=lambda: ["jobs:read", "jobs:write", "runs:read", "usage:read"])
+    billing_plan: BillingPlan = BillingPlan.free
+    monthly_quota_overrides: dict[UsageMetric, int] = Field(default_factory=dict)
 
 
 class ApiKeyRecord(BaseModel):
@@ -145,6 +154,8 @@ class ApiKeyRecord(BaseModel):
     token_hash: str
     token_prefix: str
     scopes: list[str] = Field(default_factory=list)
+    billing_plan: BillingPlan = BillingPlan.free
+    monthly_quota_overrides: dict[UsageMetric, int] = Field(default_factory=dict)
     created_at: str = Field(default_factory=utc_now_iso)
     last_used_at: str | None = None
     disabled: bool = False
@@ -183,6 +194,37 @@ class UsageSummary(BaseModel):
     until: str | None = None
     total_quantity: int = 0
     items: list[UsageSummaryItem] = Field(default_factory=list)
+
+
+class BillingUsageItem(BaseModel):
+    metric: UsageMetric
+    used: int
+    limit: int | None = None
+    remaining: int | None = None
+
+
+class BillingUsageSnapshot(BaseModel):
+    account_id: str | None = None
+    project_id: str | None = None
+    api_key_id: str | None = None
+    billing_plan: BillingPlan
+    period_start: str
+    period_end: str
+    blocked: bool = False
+    items: list[BillingUsageItem] = Field(default_factory=list)
+
+
+class QuotaDecision(BaseModel):
+    allowed: bool
+    metric: UsageMetric
+    used: int
+    requested: int
+    limit: int | None = None
+    remaining: int | None = None
+    period_start: str
+    period_end: str
+    billing_plan: BillingPlan
+    reason: str | None = None
 
 
 class WebhookTarget(BaseModel):
