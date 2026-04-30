@@ -4,6 +4,7 @@ from fastapi import Depends, FastAPI, HTTPException
 
 from commercelens.alerts.runner import MonitorRunResult, run_monitor_config, run_monitor_config_file
 from commercelens.api.auth import get_job_store, require_api_key
+from commercelens.api.quota import quota_decision, require_quota, require_scope
 from commercelens.connectors.datasets import DatasetLoadResult
 from commercelens.core.crawler import CatalogCrawlResult, crawl_catalog
 from commercelens.core.fetcher import FetchError, fetch_html
@@ -11,20 +12,7 @@ from commercelens.core.monitor import BatchMonitorResult, MonitorResult, monitor
 from commercelens.core.renderer import RenderError
 from commercelens.extractors.listing import extract_listing, extract_listing_from_html
 from commercelens.extractors.product import extract_product, extract_product_from_html
-from commercelens.jobs.models import (
-    ApiKeyCreate,
-    ApiKeyCreateResult,
-    ApiKeyRecord,
-    JobRun,
-    JobStatus,
-    MonitoringJob,
-    MonitoringJobCreate,
-    MonitoringJobUpdate,
-    UsageEvent,
-    UsageMetric,
-    UsageSummary,
-    WorkerTickResult,
-)
+from commercelens.jobs.models import ApiKeyCreate, ApiKeyCreateResult, ApiKeyRecord, BillingUsageItem, BillingUsageSnapshot, JobRun, JobStatus, MonitoringJob, MonitoringJobCreate, MonitoringJobUpdate, UsageEvent, UsageMetric, UsageSummary, WorkerTickResult
 from commercelens.jobs.store import JobStore
 from commercelens.jobs.worker import MonitoringWorker, run_job_now
 from commercelens.matching.products import ProductMatchResult, match_products
@@ -35,13 +23,9 @@ from commercelens.schemas.monitor import MonitorBatchRequest, MonitorProductRequ
 from commercelens.schemas.product import ProductExtractionRequest, ProductExtractionResult
 from commercelens.storage.price_store import PriceSnapshotStore, ProductSnapshot
 
-API_VERSION = "0.8.0"
+API_VERSION = "0.9.0"
 
-app = FastAPI(
-    title="CommerceLens API",
-    description="Product, catalog, monitoring, alerting, matching, and price intelligence extraction for developers.",
-    version=API_VERSION,
-)
+app = FastAPI(title="CommerceLens API", description="Product, catalog, monitoring, alerting, matching, and price intelligence extraction for developers.", version=API_VERSION)
 
 
 def _usage_context(key: ApiKeyRecord | None) -> dict[str, str | None]:
@@ -50,29 +34,15 @@ def _usage_context(key: ApiKeyRecord | None) -> dict[str, str | None]:
     return {"account_id": key.account_id, "project_id": key.project_id, "owner": key.owner, "api_key_id": key.id}
 
 
-def _record_usage(
-    store: JobStore,
-    key: ApiKeyRecord | None,
-    metric: UsageMetric,
-    quantity: int = 1,
-    route: str | None = None,
-    status_code: int | None = None,
-    metadata: dict | None = None,
-) -> None:
+def _record_usage(store: JobStore, key: ApiKeyRecord | None, metric: UsageMetric, quantity: int = 1, route: str | None = None, status_code: int | None = None, metadata: dict | None = None) -> None:
     context = _usage_context(key)
-    store.record_usage(
-        UsageEvent(
-            metric=metric,
-            quantity=quantity,
-            account_id=context["account_id"],
-            project_id=context["project_id"],
-            owner=context["owner"],
-            api_key_id=context["api_key_id"],
-            route=route,
-            status_code=status_code,
-            metadata=metadata or {},
-        )
-    )
+    store.record_usage(UsageEvent(metric=metric, quantity=quantity, account_id=context["account_id"], project_id=context["project_id"], owner=context["owner"], api_key_id=context["api_key_id"], route=route, status_code=status_code, metadata=metadata or {}))
+
+
+def _meter(key: ApiKeyRecord | None, metric: UsageMetric, quantity: int = 1, scope: str | None = None) -> None:
+    if scope:
+        require_scope(key, scope)
+    require_quota(key, metric, quantity)
 
 
 @app.get("/health")
@@ -81,11 +51,8 @@ def health() -> dict[str, str]:
 
 
 @app.post("/v1/extract/product", response_model=ProductExtractionResult)
-def extract_product_endpoint(
-    request: ProductExtractionRequest,
-    store: JobStore = Depends(get_job_store),
-    key: ApiKeyRecord | None = Depends(require_api_key),
-) -> ProductExtractionResult:
+def extract_product_endpoint(request: ProductExtractionRequest, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> ProductExtractionResult:
+    _meter(key, UsageMetric.product_extract, scope="extract:write")
     if not request.url and not request.html:
         raise HTTPException(status_code=400, detail="Provide either 'url' or 'html'.")
     if request.llm_fallback:
@@ -97,9 +64,7 @@ def extract_product_endpoint(
                 raise HTTPException(status_code=400, detail="render=true requires a URL.")
             result = extract_product(url, render=True, screenshot_path=request.screenshot_path, html_snapshot_path=request.html_snapshot_path)
         else:
-            html = request.html
-            if not html and url:
-                html = fetch_html(url)
+            html = request.html or (fetch_html(url) if url else None)
             assert html is not None
             result = extract_product_from_html(html, url=url)
         _record_usage(store, key, UsageMetric.product_extract, route="/v1/extract/product", metadata={"render": request.render})
@@ -111,11 +76,8 @@ def extract_product_endpoint(
 
 
 @app.post("/v1/extract/listing", response_model=ListingExtractionResult)
-def extract_listing_endpoint(
-    request: ListingExtractionRequest,
-    store: JobStore = Depends(get_job_store),
-    key: ApiKeyRecord | None = Depends(require_api_key),
-) -> ListingExtractionResult:
+def extract_listing_endpoint(request: ListingExtractionRequest, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> ListingExtractionResult:
+    _meter(key, UsageMetric.listing_extract, scope="extract:write")
     if not request.url and not request.html:
         raise HTTPException(status_code=400, detail="Provide either 'url' or 'html'.")
     url = str(request.url) if request.url else None
@@ -125,9 +87,7 @@ def extract_listing_endpoint(
                 raise HTTPException(status_code=400, detail="render=true requires a URL.")
             result = extract_listing(url, render=True, screenshot_path=request.screenshot_path, html_snapshot_path=request.html_snapshot_path)
         else:
-            html = request.html
-            if not html and url:
-                html = fetch_html(url)
+            html = request.html or (fetch_html(url) if url else None)
             assert html is not None
             result = extract_listing_from_html(html, url=url)
         _record_usage(store, key, UsageMetric.listing_extract, route="/v1/extract/listing", metadata={"products": len(result.products), "render": request.render})
@@ -139,11 +99,8 @@ def extract_listing_endpoint(
 
 
 @app.post("/v1/crawl/catalog", response_model=CatalogCrawlResult)
-def crawl_catalog_endpoint(
-    request: CatalogCrawlRequest,
-    store: JobStore = Depends(get_job_store),
-    key: ApiKeyRecord | None = Depends(require_api_key),
-) -> CatalogCrawlResult:
+def crawl_catalog_endpoint(request: CatalogCrawlRequest, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> CatalogCrawlResult:
+    _meter(key, UsageMetric.catalog_crawl, scope="crawl:write")
     try:
         result = crawl_catalog(start_url=str(request.url), max_pages=request.max_pages, follow_next_pages=request.follow_next_pages, render=request.render, debug_dir=request.debug_dir)
         _record_usage(store, key, UsageMetric.catalog_crawl, route="/v1/crawl/catalog", metadata={"pages": len(result.pages), "products": len(result.products)})
@@ -155,11 +112,8 @@ def crawl_catalog_endpoint(
 
 
 @app.post("/v1/monitor/product", response_model=MonitorResult)
-def monitor_product_endpoint(
-    request: MonitorProductRequest,
-    store: JobStore = Depends(get_job_store),
-    key: ApiKeyRecord | None = Depends(require_api_key),
-) -> MonitorResult:
+def monitor_product_endpoint(request: MonitorProductRequest, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> MonitorResult:
+    _meter(key, UsageMetric.monitor_run, scope="monitor:write")
     try:
         result = monitor_product(str(request.url), db_path=request.db_path, render=request.render)
         _record_usage(store, key, UsageMetric.monitor_run, route="/v1/monitor/product", metadata={"render": request.render, "changed": result.changed})
@@ -171,11 +125,8 @@ def monitor_product_endpoint(
 
 
 @app.post("/v1/monitor/batch", response_model=BatchMonitorResult)
-def monitor_batch_endpoint(
-    request: MonitorBatchRequest,
-    store: JobStore = Depends(get_job_store),
-    key: ApiKeyRecord | None = Depends(require_api_key),
-) -> BatchMonitorResult:
+def monitor_batch_endpoint(request: MonitorBatchRequest, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> BatchMonitorResult:
+    _meter(key, UsageMetric.monitor_run, quantity=max(1, len(request.urls)), scope="monitor:write")
     result = monitor_products([str(url) for url in request.urls], db_path=request.db_path, render=request.render)
     _record_usage(store, key, UsageMetric.monitor_run, quantity=max(1, len(request.urls)), route="/v1/monitor/batch", metadata={"urls": len(request.urls)})
     return result
@@ -185,19 +136,13 @@ def monitor_batch_endpoint(
 def price_history_endpoint(request: PriceHistoryRequest) -> list[ProductSnapshot]:
     if not request.product_key and not request.url:
         raise HTTPException(status_code=400, detail="Provide either 'product_key' or 'url'.")
-    store = PriceSnapshotStore(request.db_path)
-    if request.product_key:
-        return store.history(request.product_key, limit=request.limit)
-    assert request.url is not None
-    return store.history_for_url(str(request.url), limit=request.limit)
+    price_store = PriceSnapshotStore(request.db_path)
+    return price_store.history(request.product_key, limit=request.limit) if request.product_key else price_store.history_for_url(str(request.url), limit=request.limit)
 
 
 @app.post("/v1/alerts/run", response_model=MonitorRunResult)
-def run_alert_config_endpoint(
-    request: RunMonitorConfigRequest,
-    store: JobStore = Depends(get_job_store),
-    key: ApiKeyRecord | None = Depends(require_api_key),
-) -> MonitorRunResult:
+def run_alert_config_endpoint(request: RunMonitorConfigRequest, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> MonitorRunResult:
+    _meter(key, UsageMetric.monitor_run, scope="monitor:write")
     result = run_monitor_config(request.config, dry_run=request.dry_run, deliver=request.deliver)
     _record_usage(store, key, UsageMetric.monitor_run, route="/v1/alerts/run", metadata={"events": len(result.events), "warnings": len(result.warnings)})
     return result
@@ -209,11 +154,8 @@ def run_alert_config_file_endpoint(request: RunMonitorConfigFileRequest) -> Moni
 
 
 @app.post("/v1/jobs", response_model=MonitoringJob)
-def create_job_endpoint(
-    request: MonitoringJobCreate,
-    store: JobStore = Depends(get_job_store),
-    key: ApiKeyRecord | None = Depends(require_api_key),
-) -> MonitoringJob:
+def create_job_endpoint(request: MonitoringJobCreate, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> MonitoringJob:
+    _meter(key, UsageMetric.api_request, scope="jobs:write")
     if key:
         request.account_id = request.account_id or key.account_id
         request.project_id = request.project_id or key.project_id
@@ -222,21 +164,14 @@ def create_job_endpoint(
 
 
 @app.get("/v1/jobs", response_model=list[MonitoringJob])
-def list_jobs_endpoint(
-    status: JobStatus | None = None,
-    limit: int = 100,
-    store: JobStore = Depends(get_job_store),
-    key: ApiKeyRecord | None = Depends(require_api_key),
-) -> list[MonitoringJob]:
+def list_jobs_endpoint(status: JobStatus | None = None, limit: int = 100, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> list[MonitoringJob]:
+    require_scope(key, "jobs:read")
     return store.list_jobs(status=status, limit=limit, account_id=key.account_id if key else None, project_id=key.project_id if key else None)
 
 
 @app.get("/v1/jobs/{job_id}", response_model=MonitoringJob)
-def get_job_endpoint(
-    job_id: str,
-    store: JobStore = Depends(get_job_store),
-    key: ApiKeyRecord | None = Depends(require_api_key),
-) -> MonitoringJob:
+def get_job_endpoint(job_id: str, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> MonitoringJob:
+    require_scope(key, "jobs:read")
     job = store.get_job(job_id, account_id=key.account_id if key else None, project_id=key.project_id if key else None)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
@@ -244,12 +179,8 @@ def get_job_endpoint(
 
 
 @app.patch("/v1/jobs/{job_id}", response_model=MonitoringJob)
-def update_job_endpoint(
-    job_id: str,
-    request: MonitoringJobUpdate,
-    store: JobStore = Depends(get_job_store),
-    key: ApiKeyRecord | None = Depends(require_api_key),
-) -> MonitoringJob:
+def update_job_endpoint(job_id: str, request: MonitoringJobUpdate, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> MonitoringJob:
+    require_scope(key, "jobs:write")
     job = store.update_job(job_id, request, account_id=key.account_id if key else None, project_id=key.project_id if key else None)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
@@ -257,11 +188,8 @@ def update_job_endpoint(
 
 
 @app.delete("/v1/jobs/{job_id}")
-def delete_job_endpoint(
-    job_id: str,
-    store: JobStore = Depends(get_job_store),
-    key: ApiKeyRecord | None = Depends(require_api_key),
-) -> dict[str, bool]:
+def delete_job_endpoint(job_id: str, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> dict[str, bool]:
+    require_scope(key, "jobs:write")
     deleted = store.delete_job(job_id, account_id=key.account_id if key else None, project_id=key.project_id if key else None)
     if not deleted:
         raise HTTPException(status_code=404, detail="Job not found.")
@@ -269,13 +197,8 @@ def delete_job_endpoint(
 
 
 @app.post("/v1/jobs/{job_id}/run", response_model=JobRun)
-def run_job_endpoint(
-    job_id: str,
-    dry_run: bool = False,
-    deliver: bool = True,
-    store: JobStore = Depends(get_job_store),
-    key: ApiKeyRecord | None = Depends(require_api_key),
-) -> JobRun:
+def run_job_endpoint(job_id: str, dry_run: bool = False, deliver: bool = True, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> JobRun:
+    _meter(key, UsageMetric.job_run, scope="jobs:write")
     job = store.get_job(job_id, account_id=key.account_id if key else None, project_id=key.project_id if key else None)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
@@ -283,21 +206,14 @@ def run_job_endpoint(
 
 
 @app.get("/v1/runs", response_model=list[JobRun])
-def list_runs_endpoint(
-    job_id: str | None = None,
-    limit: int = 100,
-    store: JobStore = Depends(get_job_store),
-    key: ApiKeyRecord | None = Depends(require_api_key),
-) -> list[JobRun]:
+def list_runs_endpoint(job_id: str | None = None, limit: int = 100, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> list[JobRun]:
+    require_scope(key, "runs:read")
     return store.list_runs(job_id=job_id, limit=limit, account_id=key.account_id if key else None, project_id=key.project_id if key else None)
 
 
 @app.get("/v1/runs/{run_id}", response_model=JobRun)
-def get_run_endpoint(
-    run_id: str,
-    store: JobStore = Depends(get_job_store),
-    key: ApiKeyRecord | None = Depends(require_api_key),
-) -> JobRun:
+def get_run_endpoint(run_id: str, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> JobRun:
+    require_scope(key, "runs:read")
     run = store.get_run(run_id, account_id=key.account_id if key else None, project_id=key.project_id if key else None)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found.")
@@ -305,13 +221,8 @@ def get_run_endpoint(
 
 
 @app.post("/v1/worker/tick", response_model=WorkerTickResult)
-def worker_tick_endpoint(
-    limit: int = 25,
-    dry_run: bool = False,
-    deliver: bool = True,
-    store: JobStore = Depends(get_job_store),
-    key: ApiKeyRecord | None = Depends(require_api_key),
-) -> WorkerTickResult:
+def worker_tick_endpoint(limit: int = 25, dry_run: bool = False, deliver: bool = True, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> WorkerTickResult:
+    require_scope(key, "worker:write")
     return MonitoringWorker(store=store).tick(limit=limit, dry_run=dry_run, deliver=deliver)
 
 
@@ -321,32 +232,24 @@ def create_api_key_endpoint(request: ApiKeyCreate, store: JobStore = Depends(get
 
 
 @app.get("/v1/usage/events", response_model=list[UsageEvent])
-def list_usage_events_endpoint(
-    metric: UsageMetric | None = None,
-    since: str | None = None,
-    until: str | None = None,
-    limit: int = 100,
-    store: JobStore = Depends(get_job_store),
-    key: ApiKeyRecord | None = Depends(require_api_key),
-) -> list[UsageEvent]:
-    return store.list_usage_events(
-        account_id=key.account_id if key else None,
-        project_id=key.project_id if key else None,
-        metric=metric,
-        since=since,
-        until=until,
-        limit=limit,
-    )
+def list_usage_events_endpoint(metric: UsageMetric | None = None, since: str | None = None, until: str | None = None, limit: int = 100, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> list[UsageEvent]:
+    require_scope(key, "usage:read")
+    return store.list_usage_events(account_id=key.account_id if key else None, project_id=key.project_id if key else None, metric=metric, since=since, until=until, limit=limit)
 
 
 @app.get("/v1/usage/summary", response_model=UsageSummary)
-def usage_summary_endpoint(
-    since: str | None = None,
-    until: str | None = None,
-    store: JobStore = Depends(get_job_store),
-    key: ApiKeyRecord | None = Depends(require_api_key),
-) -> UsageSummary:
+def usage_summary_endpoint(since: str | None = None, until: str | None = None, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> UsageSummary:
+    require_scope(key, "usage:read")
     return store.usage_summary(account_id=key.account_id if key else None, project_id=key.project_id if key else None, since=since, until=until)
+
+
+@app.get("/v1/billing/usage", response_model=BillingUsageSnapshot)
+def billing_usage_endpoint(key: ApiKeyRecord | None = Depends(require_api_key)) -> BillingUsageSnapshot:
+    if key is None:
+        raise HTTPException(status_code=400, detail="Billing usage requires API key auth. Set COMMERCELENS_REQUIRE_API_KEY=true.")
+    require_scope(key, "usage:read")
+    decisions = [quota_decision(key, metric, 0) for metric in UsageMetric]
+    return BillingUsageSnapshot(account_id=key.account_id, project_id=key.project_id, api_key_id=key.id, billing_plan=key.billing_plan, period_start=decisions[0].period_start, period_end=decisions[0].period_end, blocked=any(not decision.allowed for decision in decisions), items=[BillingUsageItem(metric=decision.metric, used=decision.used, limit=decision.limit, remaining=decision.remaining) for decision in decisions])
 
 
 @app.post("/v1/records/normalize", response_model=DatasetLoadResult)
@@ -355,11 +258,8 @@ def normalize_records_endpoint(request: NormalizeRecordsRequest) -> DatasetLoadR
 
 
 @app.post("/v1/match/products", response_model=ProductMatchResult)
-def match_products_endpoint(
-    request: MatchProductsRequest,
-    store: JobStore = Depends(get_job_store),
-    key: ApiKeyRecord | None = Depends(require_api_key),
-) -> ProductMatchResult:
+def match_products_endpoint(request: MatchProductsRequest, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> ProductMatchResult:
+    _meter(key, UsageMetric.match_request, scope="match:write")
     result = match_products(request.left, request.right, threshold=request.threshold, top_k=request.top_k)
     _record_usage(store, key, UsageMetric.match_request, route="/v1/match/products", metadata={"left": len(request.left), "right": len(request.right), "matches": len(result.matches)})
     return result
