@@ -32,12 +32,7 @@ except ImportError:  # pragma: no cover
 
 
 class PostgresJobStore:
-    """Postgres-backed implementation of the CommerceLens hosted job store.
-
-    The public method surface mirrors `JobStore`, which keeps the FastAPI layer and
-    worker code storage-agnostic. SQLite remains the default for local development,
-    while this adapter is intended for hosted API/worker deployments.
-    """
+    """Postgres-backed implementation of the CommerceLens hosted job store."""
 
     def __init__(self, dsn: str) -> None:
         if psycopg is None:
@@ -50,76 +45,16 @@ class PostgresJobStore:
 
     def _ensure_schema(self) -> None:
         with self._connect() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS monitoring_jobs (
-                    id TEXT PRIMARY KEY,
-                    payload JSONB NOT NULL,
-                    status TEXT NOT NULL,
-                    next_run_at TIMESTAMPTZ,
-                    updated_at TIMESTAMPTZ NOT NULL,
-                    account_id TEXT,
-                    project_id TEXT,
-                    owner TEXT
-                )
-                """
-            )
+            conn.execute("""CREATE TABLE IF NOT EXISTS monitoring_jobs (id TEXT PRIMARY KEY, payload JSONB NOT NULL, status TEXT NOT NULL, next_run_at TIMESTAMPTZ, updated_at TIMESTAMPTZ NOT NULL, account_id TEXT, project_id TEXT, owner TEXT)""")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_status_next_run ON monitoring_jobs(status, next_run_at)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_account_project ON monitoring_jobs(account_id, project_id)")
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS job_runs (
-                    id TEXT PRIMARY KEY,
-                    job_id TEXT NOT NULL REFERENCES monitoring_jobs(id) ON DELETE CASCADE,
-                    payload JSONB NOT NULL,
-                    status TEXT NOT NULL,
-                    started_at TIMESTAMPTZ,
-                    finished_at TIMESTAMPTZ,
-                    created_at TIMESTAMPTZ NOT NULL,
-                    account_id TEXT,
-                    project_id TEXT,
-                    owner TEXT
-                )
-                """
-            )
+            conn.execute("""CREATE TABLE IF NOT EXISTS job_runs (id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES monitoring_jobs(id) ON DELETE CASCADE, payload JSONB NOT NULL, status TEXT NOT NULL, started_at TIMESTAMPTZ, finished_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL, account_id TEXT, project_id TEXT, owner TEXT)""")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_job_id ON job_runs(job_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_status ON job_runs(status)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_account_project ON job_runs(account_id, project_id)")
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS api_keys (
-                    id TEXT PRIMARY KEY,
-                    payload JSONB NOT NULL,
-                    token_hash TEXT NOT NULL UNIQUE,
-                    token_prefix TEXT NOT NULL,
-                    disabled BOOLEAN NOT NULL DEFAULT FALSE,
-                    created_at TIMESTAMPTZ NOT NULL,
-                    account_id TEXT,
-                    project_id TEXT,
-                    owner TEXT
-                )
-                """
-            )
+            conn.execute("""CREATE TABLE IF NOT EXISTS api_keys (id TEXT PRIMARY KEY, payload JSONB NOT NULL, token_hash TEXT NOT NULL UNIQUE, token_prefix TEXT NOT NULL, disabled BOOLEAN NOT NULL DEFAULT FALSE, created_at TIMESTAMPTZ NOT NULL, account_id TEXT, project_id TEXT, owner TEXT)""")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_api_keys_account_project ON api_keys(account_id, project_id)")
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS usage_events (
-                    id TEXT PRIMARY KEY,
-                    metric TEXT NOT NULL,
-                    quantity INTEGER NOT NULL,
-                    payload JSONB NOT NULL,
-                    account_id TEXT,
-                    project_id TEXT,
-                    owner TEXT,
-                    api_key_id TEXT,
-                    job_id TEXT,
-                    run_id TEXT,
-                    route TEXT,
-                    status_code INTEGER,
-                    created_at TIMESTAMPTZ NOT NULL
-                )
-                """
-            )
+            conn.execute("""CREATE TABLE IF NOT EXISTS usage_events (id TEXT PRIMARY KEY, metric TEXT NOT NULL, quantity INTEGER NOT NULL, payload JSONB NOT NULL, account_id TEXT, project_id TEXT, owner TEXT, api_key_id TEXT, job_id TEXT, run_id TEXT, route TEXT, status_code INTEGER, created_at TIMESTAMPTZ NOT NULL)""")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_usage_created_at ON usage_events(created_at)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_usage_metric ON usage_events(metric)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_usage_account_project ON usage_events(account_id, project_id)")
@@ -134,21 +69,7 @@ class PostgresJobStore:
     def save_job(self, job: MonitoringJob) -> MonitoringJob:
         job.updated_at = utc_now_iso()
         with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO monitoring_jobs (id, payload, status, next_run_at, updated_at, account_id, project_id, owner)
-                VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT(id) DO UPDATE SET
-                    payload=excluded.payload,
-                    status=excluded.status,
-                    next_run_at=excluded.next_run_at,
-                    updated_at=excluded.updated_at,
-                    account_id=excluded.account_id,
-                    project_id=excluded.project_id,
-                    owner=excluded.owner
-                """,
-                (job.id, job.model_dump_json(exclude_none=True), job.status.value, job.next_run_at, job.updated_at, job.account_id, job.project_id, job.owner),
-            )
+            conn.execute("""INSERT INTO monitoring_jobs (id, payload, status, next_run_at, updated_at, account_id, project_id, owner) VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, %s) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, status=excluded.status, next_run_at=excluded.next_run_at, updated_at=excluded.updated_at, account_id=excluded.account_id, project_id=excluded.project_id, owner=excluded.owner""", (job.id, job.model_dump_json(exclude_none=True), job.status.value, job.next_run_at, job.updated_at, job.account_id, job.project_id, job.owner))
         return job
 
     def get_job(self, job_id: str, account_id: str | None = None, project_id: str | None = None) -> MonitoringJob | None:
@@ -196,15 +117,7 @@ class PostgresJobStore:
     def due_jobs(self, now_iso: str | None = None, limit: int = 50) -> list[MonitoringJob]:
         now_iso = now_iso or utc_now_iso()
         with self._connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT payload FROM monitoring_jobs
-                WHERE status = %s AND next_run_at IS NOT NULL AND next_run_at <= %s
-                ORDER BY next_run_at ASC
-                LIMIT %s
-                """,
-                (JobStatus.active.value, now_iso, limit),
-            ).fetchall()
+            rows = conn.execute("SELECT payload FROM monitoring_jobs WHERE status = %s AND next_run_at IS NOT NULL AND next_run_at <= %s ORDER BY next_run_at ASC LIMIT %s", (JobStatus.active.value, now_iso, limit)).fetchall()
         return [MonitoringJob.model_validate(row["payload"]) for row in rows]
 
     def mark_job_run_started(self, job: MonitoringJob) -> JobRun:
@@ -252,21 +165,7 @@ class PostgresJobStore:
 
     def save_run(self, run: JobRun) -> JobRun:
         with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO job_runs (id, job_id, payload, status, started_at, finished_at, created_at, account_id, project_id, owner)
-                VALUES (%s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT(id) DO UPDATE SET
-                    payload=excluded.payload,
-                    status=excluded.status,
-                    started_at=excluded.started_at,
-                    finished_at=excluded.finished_at,
-                    account_id=excluded.account_id,
-                    project_id=excluded.project_id,
-                    owner=excluded.owner
-                """,
-                (run.id, run.job_id, run.model_dump_json(exclude_none=True), run.status.value, run.started_at, run.finished_at, run.created_at, run.account_id, run.project_id, run.owner),
-            )
+            conn.execute("""INSERT INTO job_runs (id, job_id, payload, status, started_at, finished_at, created_at, account_id, project_id, owner) VALUES (%s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, status=excluded.status, started_at=excluded.started_at, finished_at=excluded.finished_at, account_id=excluded.account_id, project_id=excluded.project_id, owner=excluded.owner""", (run.id, run.job_id, run.model_dump_json(exclude_none=True), run.status.value, run.started_at, run.finished_at, run.created_at, run.account_id, run.project_id, run.owner))
         return run
 
     def get_run(self, run_id: str, account_id: str | None = None, project_id: str | None = None) -> JobRun | None:
@@ -292,15 +191,9 @@ class PostgresJobStore:
 
     def create_api_key(self, request: ApiKeyCreate) -> ApiKeyCreateResult:
         token = f"cl_{secrets.token_urlsafe(32)}"
-        key = ApiKeyRecord(name=request.name, owner=request.owner, account_id=request.account_id, project_id=request.project_id, scopes=request.scopes, token_hash=hashlib.sha256(token.encode("utf-8")).hexdigest(), token_prefix=token[:10])
+        key = ApiKeyRecord(name=request.name, owner=request.owner, account_id=request.account_id, project_id=request.project_id, scopes=request.scopes, billing_plan=request.billing_plan, monthly_quota_overrides=request.monthly_quota_overrides, token_hash=hashlib.sha256(token.encode("utf-8")).hexdigest(), token_prefix=token[:10])
         with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO api_keys (id, payload, token_hash, token_prefix, disabled, created_at, account_id, project_id, owner)
-                VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (key.id, key.model_dump_json(exclude_none=True), key.token_hash, key.token_prefix, False, key.created_at, key.account_id, key.project_id, key.owner),
-            )
+            conn.execute("""INSERT INTO api_keys (id, payload, token_hash, token_prefix, disabled, created_at, account_id, project_id, owner) VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s)""", (key.id, key.model_dump_json(exclude_none=True), key.token_hash, key.token_prefix, False, key.created_at, key.account_id, key.project_id, key.owner))
         return ApiKeyCreateResult(key=key, token=token)
 
     def verify_api_key(self, token: str) -> ApiKeyRecord | None:
@@ -321,13 +214,7 @@ class PostgresJobStore:
 
     def record_usage(self, event: UsageEvent) -> UsageEvent:
         with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO usage_events (id, metric, quantity, payload, account_id, project_id, owner, api_key_id, job_id, run_id, route, status_code, created_at)
-                VALUES (%s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (event.id, event.metric.value, event.quantity, event.model_dump_json(exclude_none=True), event.account_id, event.project_id, event.owner, event.api_key_id, event.job_id, event.run_id, event.route, event.status_code, event.created_at),
-            )
+            conn.execute("""INSERT INTO usage_events (id, metric, quantity, payload, account_id, project_id, owner, api_key_id, job_id, run_id, route, status_code, created_at) VALUES (%s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s)""", (event.id, event.metric.value, event.quantity, event.model_dump_json(exclude_none=True), event.account_id, event.project_id, event.owner, event.api_key_id, event.job_id, event.run_id, event.route, event.status_code, event.created_at))
         return event
 
     def list_usage_events(self, account_id: str | None = None, project_id: str | None = None, metric: UsageMetric | None = None, since: str | None = None, until: str | None = None, limit: int = 100) -> list[UsageEvent]:
@@ -373,8 +260,7 @@ class PostgresJobStore:
     def compute_retry_run(self, job: MonitoringJob, attempt: int) -> str | None:
         if attempt > job.max_retries:
             return self.compute_next_run(job)
-        delay = job.retry_backoff_seconds * max(1, attempt)
-        return (datetime.now(timezone.utc) + timedelta(seconds=delay)).replace(microsecond=0).isoformat()
+        return (datetime.now(timezone.utc) + timedelta(seconds=job.retry_backoff_seconds * max(1, attempt))).replace(microsecond=0).isoformat()
 
     def _add_tenant_filters(self, query: str, params: list[object], account_id: str | None = None, project_id: str | None = None) -> tuple[str, list[object]]:
         if account_id:
