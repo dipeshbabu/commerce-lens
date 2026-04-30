@@ -38,3 +38,17 @@ def require_api_key(x_api_key: str | None = Header(default=None)) -> ApiKeyRecor
     if not key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key.")
     return key
+
+
+def require_admin_token(x_admin_token: str | None = Header(default=None)) -> None:
+    """Protect API-key issuance in hosted deployments.
+
+    Local development remains open by default. In production, set
+    `COMMERCELENS_ADMIN_TOKEN` to a long random secret; then `/v1/api-keys`
+    requires the same value in the `X-Admin-Token` header.
+    """
+    expected = os.getenv("COMMERCELENS_ADMIN_TOKEN")
+    if not expected:
+        return
+    if not x_admin_token or x_admin_token != expected:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid admin token.")
