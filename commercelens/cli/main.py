@@ -10,12 +10,14 @@ from rich.console import Console
 from commercelens.alerts.config import MonitorConfig, save_example_config
 from commercelens.alerts.runner import run_monitor_config_file
 from commercelens.api.auth import get_job_store
+from commercelens.api.quota import quota_decision
 from commercelens.connectors.datasets import load_product_records, records_from_snapshots, write_product_records
 from commercelens.core.crawler import crawl_catalog
 from commercelens.core.monitor import monitor_product, monitor_products
 from commercelens.extractors.listing import extract_listing, extract_listing_from_html
 from commercelens.extractors.product import extract_product, extract_product_from_html
-from commercelens.jobs.models import ApiKeyCreate, JobStatus, MonitoringJobCreate, MonitoringJobUpdate, ScheduleKind, UsageMetric
+from commercelens.jobs.billing import MONTHLY_PLAN_LIMITS, current_month_window
+from commercelens.jobs.models import ApiKeyCreate, BillingPlan, BillingUsageItem, BillingUsageSnapshot, JobStatus, MonitoringJobCreate, MonitoringJobUpdate, ScheduleKind, UsageMetric
 from commercelens.jobs.store import JobStore
 from commercelens.jobs.worker import MonitoringWorker, run_job_now
 from commercelens.matching.products import match_products
@@ -132,41 +134,16 @@ def init_config(path: Path = typer.Argument(Path("commercelens.monitor.json"))) 
 
 
 @app.command("create-job")
-def create_job(
-    config: Path = typer.Argument(...),
-    name: str = typer.Option(..., "--name"),
-    jobs_db: Path | None = typer.Option(None, "--jobs-db", help="SQLite jobs DB path. Omit to use COMMERCELENS_STORE_BACKEND."),
-    interval_minutes: int = typer.Option(360, "--interval-minutes", min=1),
-    manual: bool = typer.Option(False, "--manual"),
-    account_id: str | None = typer.Option(None, "--account-id"),
-    project_id: str | None = typer.Option(None, "--project-id"),
-    owner: str | None = typer.Option(None, "--owner"),
-    out: Path | None = typer.Option(None, "--out", "-o"),
-) -> None:
+def create_job(config: Path = typer.Argument(...), name: str = typer.Option(..., "--name"), jobs_db: Path | None = typer.Option(None, "--jobs-db", help="SQLite jobs DB path. Omit to use COMMERCELENS_STORE_BACKEND."), interval_minutes: int = typer.Option(360, "--interval-minutes", min=1), manual: bool = typer.Option(False, "--manual"), account_id: str | None = typer.Option(None, "--account-id"), project_id: str | None = typer.Option(None, "--project-id"), owner: str | None = typer.Option(None, "--owner"), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
     """Create a persistent hosted monitoring job from a monitor config file."""
     monitor_config = MonitorConfig.load(config)
-    request = MonitoringJobCreate(
-        name=name,
-        config=monitor_config,
-        schedule_kind=ScheduleKind.manual if manual else ScheduleKind.interval,
-        interval_minutes=interval_minutes,
-        account_id=account_id,
-        project_id=project_id,
-        owner=owner,
-    )
+    request = MonitoringJobCreate(name=name, config=monitor_config, schedule_kind=ScheduleKind.manual if manual else ScheduleKind.interval, interval_minutes=interval_minutes, account_id=account_id, project_id=project_id, owner=owner)
     job = _job_store(jobs_db).create_job(request)
     _write_or_print(job.model_dump(mode="json", exclude_none=True), out=out)
 
 
 @app.command("list-jobs")
-def list_jobs(
-    jobs_db: Path | None = typer.Option(None, "--jobs-db", help="SQLite jobs DB path. Omit to use COMMERCELENS_STORE_BACKEND."),
-    status: JobStatus | None = typer.Option(None, "--status"),
-    account_id: str | None = typer.Option(None, "--account-id"),
-    project_id: str | None = typer.Option(None, "--project-id"),
-    limit: int = typer.Option(100, "--limit", min=1, max=1000),
-    out: Path | None = typer.Option(None, "--out", "-o"),
-) -> None:
+def list_jobs(jobs_db: Path | None = typer.Option(None, "--jobs-db", help="SQLite jobs DB path. Omit to use COMMERCELENS_STORE_BACKEND."), status: JobStatus | None = typer.Option(None, "--status"), account_id: str | None = typer.Option(None, "--account-id"), project_id: str | None = typer.Option(None, "--project-id"), limit: int = typer.Option(100, "--limit", min=1, max=1000), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
     """List persistent monitoring jobs."""
     jobs = _job_store(jobs_db).list_jobs(status=status, limit=limit, account_id=account_id, project_id=project_id)
     _write_or_print([job.model_dump(mode="json", exclude_none=True) for job in jobs], out=out)
@@ -211,59 +188,52 @@ def worker(jobs_db: Path | None = typer.Option(None, "--jobs-db"), poll_seconds:
 
 
 @app.command("list-runs")
-def list_runs(
-    jobs_db: Path | None = typer.Option(None, "--jobs-db"),
-    job_id: str | None = typer.Option(None, "--job-id"),
-    account_id: str | None = typer.Option(None, "--account-id"),
-    project_id: str | None = typer.Option(None, "--project-id"),
-    limit: int = typer.Option(100, "--limit", min=1, max=1000),
-    out: Path | None = typer.Option(None, "--out", "-o"),
-) -> None:
+def list_runs(jobs_db: Path | None = typer.Option(None, "--jobs-db"), job_id: str | None = typer.Option(None, "--job-id"), account_id: str | None = typer.Option(None, "--account-id"), project_id: str | None = typer.Option(None, "--project-id"), limit: int = typer.Option(100, "--limit", min=1, max=1000), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
     """List monitoring job runs."""
     runs = _job_store(jobs_db).list_runs(job_id=job_id, limit=limit, account_id=account_id, project_id=project_id)
     _write_or_print([run.model_dump(mode="json", exclude_none=True) for run in runs], out=out)
 
 
 @app.command("create-api-key")
-def create_api_key(
-    name: str = typer.Option(..., "--name"),
-    jobs_db: Path | None = typer.Option(None, "--jobs-db"),
-    owner: str | None = typer.Option(None, "--owner"),
-    account_id: str | None = typer.Option(None, "--account-id"),
-    project_id: str | None = typer.Option(None, "--project-id"),
-    scopes: list[str] | None = typer.Option(None, "--scope"),
-    out: Path | None = typer.Option(None, "--out", "-o"),
-) -> None:
+def create_api_key(name: str = typer.Option(..., "--name"), jobs_db: Path | None = typer.Option(None, "--jobs-db"), owner: str | None = typer.Option(None, "--owner"), account_id: str | None = typer.Option(None, "--account-id"), project_id: str | None = typer.Option(None, "--project-id"), billing_plan: BillingPlan = typer.Option(BillingPlan.free, "--billing-plan"), scopes: list[str] | None = typer.Option(None, "--scope"), quota: list[str] | None = typer.Option(None, "--quota", help="Override monthly quota as metric=limit. Example: --quota product_extract=10000"), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
     """Create an API key for hosted deployments."""
-    result = _job_store(jobs_db).create_api_key(ApiKeyCreate(name=name, owner=owner, account_id=account_id, project_id=project_id, scopes=scopes or ["*"]))
+    overrides: dict[UsageMetric, int] = {}
+    for item in quota or []:
+        if "=" not in item:
+            raise typer.BadParameter("Quota overrides must use metric=limit format.")
+        metric_name, raw_limit = item.split("=", 1)
+        overrides[UsageMetric(metric_name)] = int(raw_limit)
+    result = _job_store(jobs_db).create_api_key(ApiKeyCreate(name=name, owner=owner, account_id=account_id, project_id=project_id, scopes=scopes or ["*"], billing_plan=billing_plan, monthly_quota_overrides=overrides))
     _write_or_print(result.model_dump(mode="json", exclude_none=True), out=out)
 
 
+@app.command("billing-plans")
+def billing_plans(out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+    """Show built-in monthly quota limits for each billing plan."""
+    payload = {plan.value: {metric.value: limit for metric, limit in limits.items()} for plan, limits in MONTHLY_PLAN_LIMITS.items()}
+    _write_or_print(payload, out=out)
+
+
+@app.command("billing-usage")
+def billing_usage(token: str = typer.Option(..., "--token", envvar="COMMERCELENS_API_KEY"), jobs_db: Path | None = typer.Option(None, "--jobs-db"), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+    """Show current monthly usage and quota remaining for an API key."""
+    key = _job_store(jobs_db).verify_api_key(token)
+    if not key:
+        raise typer.BadParameter("Invalid API key token.")
+    decisions = [quota_decision(key, metric, 0) for metric in UsageMetric]
+    snapshot = BillingUsageSnapshot(account_id=key.account_id, project_id=key.project_id, api_key_id=key.id, billing_plan=key.billing_plan, period_start=decisions[0].period_start, period_end=decisions[0].period_end, blocked=any(not decision.allowed for decision in decisions), items=[BillingUsageItem(metric=decision.metric, used=decision.used, limit=decision.limit, remaining=decision.remaining) for decision in decisions])
+    _write_or_print(snapshot.model_dump(mode="json", exclude_none=True), out=out)
+
+
 @app.command("usage-events")
-def usage_events(
-    jobs_db: Path | None = typer.Option(None, "--jobs-db"),
-    account_id: str | None = typer.Option(None, "--account-id"),
-    project_id: str | None = typer.Option(None, "--project-id"),
-    metric: UsageMetric | None = typer.Option(None, "--metric"),
-    since: str | None = typer.Option(None, "--since"),
-    until: str | None = typer.Option(None, "--until"),
-    limit: int = typer.Option(100, "--limit", min=1, max=1000),
-    out: Path | None = typer.Option(None, "--out", "-o"),
-) -> None:
+def usage_events(jobs_db: Path | None = typer.Option(None, "--jobs-db"), account_id: str | None = typer.Option(None, "--account-id"), project_id: str | None = typer.Option(None, "--project-id"), metric: UsageMetric | None = typer.Option(None, "--metric"), since: str | None = typer.Option(None, "--since"), until: str | None = typer.Option(None, "--until"), limit: int = typer.Option(100, "--limit", min=1, max=1000), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
     """List hosted usage events."""
     events = _job_store(jobs_db).list_usage_events(account_id=account_id, project_id=project_id, metric=metric, since=since, until=until, limit=limit)
     _write_or_print([event.model_dump(mode="json", exclude_none=True) for event in events], out=out)
 
 
 @app.command("usage-summary")
-def usage_summary(
-    jobs_db: Path | None = typer.Option(None, "--jobs-db"),
-    account_id: str | None = typer.Option(None, "--account-id"),
-    project_id: str | None = typer.Option(None, "--project-id"),
-    since: str | None = typer.Option(None, "--since"),
-    until: str | None = typer.Option(None, "--until"),
-    out: Path | None = typer.Option(None, "--out", "-o"),
-) -> None:
+def usage_summary(jobs_db: Path | None = typer.Option(None, "--jobs-db"), account_id: str | None = typer.Option(None, "--account-id"), project_id: str | None = typer.Option(None, "--project-id"), since: str | None = typer.Option(None, "--since"), until: str | None = typer.Option(None, "--until"), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
     """Summarize hosted usage by metric."""
     summary = _job_store(jobs_db).usage_summary(account_id=account_id, project_id=project_id, since=since, until=until)
     _write_or_print(summary.model_dump(mode="json", exclude_none=True), out=out)
@@ -308,10 +278,7 @@ def match_records(left: Path = typer.Argument(...), right: Path = typer.Argument
     left_result = load_product_records(left)
     right_result = load_product_records(right)
     result = match_products(left_result.records, right_result.records, threshold=threshold, top_k=top_k)
-    payload = {
-        "matches": [match.model_dump(mode="json", exclude_none=True) for match in result.matches],
-        "warnings": left_result.warnings + right_result.warnings,
-    }
+    payload = {"matches": [match.model_dump(mode="json", exclude_none=True) for match in result.matches], "warnings": left_result.warnings + right_result.warnings}
     _write_or_print(payload, out=out)
 
 
