@@ -7,7 +7,7 @@ from typing import Any, Literal
 import typer
 from rich.console import Console
 
-from commercelens.alerts.config import MonitorConfig, save_example_config
+from commercelens.alerts.config import load_monitor_config, save_example_config
 from commercelens.alerts.runner import run_monitor_config_file
 from commercelens.api.auth import get_job_store
 from commercelens.api.quota import quota_decision
@@ -136,7 +136,7 @@ def init_config(path: Path = typer.Argument(Path("commercelens.monitor.json"))) 
 @app.command("create-job")
 def create_job(config: Path = typer.Argument(...), name: str = typer.Option(..., "--name"), jobs_db: Path | None = typer.Option(None, "--jobs-db", help="SQLite jobs DB path. Omit to use COMMERCELENS_STORE_BACKEND."), interval_minutes: int = typer.Option(360, "--interval-minutes", min=1), manual: bool = typer.Option(False, "--manual"), account_id: str | None = typer.Option(None, "--account-id"), project_id: str | None = typer.Option(None, "--project-id"), owner: str | None = typer.Option(None, "--owner"), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
     """Create a persistent hosted monitoring job from a monitor config file."""
-    monitor_config = MonitorConfig.load(config)
+    monitor_config = load_monitor_config(config)
     request = MonitoringJobCreate(name=name, config=monitor_config, schedule_kind=ScheduleKind.manual if manual else ScheduleKind.interval, interval_minutes=interval_minutes, account_id=account_id, project_id=project_id, owner=owner)
     job = _job_store(jobs_db).create_job(request)
     _write_or_print(job.model_dump(mode="json", exclude_none=True), out=out)

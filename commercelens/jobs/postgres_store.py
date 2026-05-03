@@ -34,8 +34,8 @@ from commercelens.jobs.models import (
 from commercelens.jobs.store import duration_ms
 
 try:  # pragma: no cover - optional dependency path
-    import psycopg
-    from psycopg.rows import dict_row
+    import psycopg  # type: ignore[import-not-found]
+    from psycopg.rows import dict_row  # type: ignore[import-not-found]
 except ImportError:  # pragma: no cover
     psycopg = None
     dict_row = None

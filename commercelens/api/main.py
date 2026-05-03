@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from html import escape
+from typing import Sequence
 from urllib.parse import urlencode
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -128,7 +129,7 @@ def _dashboard_shell(title: str, content: str, token_query: str = "") -> str:
 </html>"""
 
 
-def _table(headers: list[str], rows: list[list[object]]) -> str:
+def _table(headers: list[str], rows: Sequence[Sequence[object]]) -> str:
     head = "".join(f"<th>{_esc(header)}</th>" for header in headers)
     if not rows:
         return f"<table><thead><tr>{head}</tr></thead><tbody><tr><td colspan='{len(headers)}' class='muted'>No records</td></tr></tbody></table>"
@@ -493,7 +494,7 @@ def crawl_catalog_endpoint(request: CatalogCrawlRequest, store: JobStore = Depen
     _meter(key, UsageMetric.catalog_crawl, scope="crawl:write")
     try:
         result = crawl_catalog(start_url=str(request.url), max_pages=request.max_pages, follow_next_pages=request.follow_next_pages, render=request.render, debug_dir=request.debug_dir)
-        _record_usage(store, key, UsageMetric.catalog_crawl, route="/v1/crawl/catalog", metadata={"pages": len(result.pages), "products": len(result.products)})
+        _record_usage(store, key, UsageMetric.catalog_crawl, route="/v1/crawl/catalog", metadata={"pages": result.pages_crawled, "products": len(result.products)})
         return result
     except FetchError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -506,7 +507,7 @@ def monitor_product_endpoint(request: MonitorProductRequest, store: JobStore = D
     _meter(key, UsageMetric.monitor_run, scope="monitor:write")
     try:
         result = monitor_product(str(request.url), db_path=request.db_path, render=request.render)
-        _record_usage(store, key, UsageMetric.monitor_run, route="/v1/monitor/product", metadata={"render": request.render, "changed": result.changed})
+        _record_usage(store, key, UsageMetric.monitor_run, route="/v1/monitor/product", metadata={"render": request.render, "changed": result.has_change})
         return result
     except FetchError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc

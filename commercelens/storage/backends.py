@@ -149,7 +149,7 @@ class PostgresSnapshotBackend(ProductSnapshotBackend):
                         snapshot.availability,
                         snapshot.image_url,
                         snapshot.captured_at,
-                        snapshot.raw_payload,
+                        snapshot.raw,
                     ),
                 )
 
@@ -229,7 +229,7 @@ def _snapshot_from_row(row: dict) -> ProductSnapshot:
         availability=row.get("availability"),
         image_url=row.get("image_url"),
         captured_at=row["captured_at"],
-        raw_payload=payload,
+        raw=payload,
     )
 
 

@@ -125,14 +125,15 @@ def _load_csv(path: Path) -> DatasetLoadResult:
         reader = csv.DictReader(handle)
         for index, row in enumerate(reader, start=1):
             try:
-                amount = row.get("amount") or row.get("price")
+                raw_amount = row.get("amount") or row.get("price")
+                amount = float(str(raw_amount)) if raw_amount not in {None, ""} else None
                 records.append(
                     ProductRecord(
                         url=row.get("url") or row.get("source_url") or row.get("canonical_url"),
                         product_key=row.get("product_key") or None,
                         name=row.get("name") or row.get("title") or None,
                         brand=row.get("brand") or None,
-                        amount=float(amount) if amount not in {None, ""} else None,
+                        amount=amount,
                         currency=row.get("currency") or None,
                         availability=row.get("availability") or None,
                         image_url=row.get("image_url") or row.get("image") or None,

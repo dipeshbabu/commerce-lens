@@ -38,6 +38,22 @@ def test_snapshot_store_tracks_history_and_price_drop(tmp_path) -> None:
     assert change.delta_percent == -20.0
 
 
+def test_snapshot_store_latest_aliases_and_change_limits(tmp_path) -> None:
+    db_path = tmp_path / "prices.db"
+    store = PriceSnapshotStore(db_path)
+
+    first = snapshot_from_result(_result(100.0), captured_at="2026-01-01T00:00:00+00:00")
+    second = snapshot_from_result(_result(80.0), captured_at="2026-01-02T00:00:00+00:00")
+
+    store.add_snapshot(first)
+    store.add_snapshot(second)
+
+    assert store.latest(first.product_key) is not None
+    assert store.latest(first.product_key).amount == 80.0
+    assert [snapshot.product_key for snapshot in store.list_latest(limit=1)] == [first.product_key]
+    assert len(store.detect_changes(limit=1)) == 1
+
+
 def test_compare_snapshots_detects_back_in_stock() -> None:
     previous = snapshot_from_result(
         _result(50.0, availability=Availability.OUT_OF_STOCK),

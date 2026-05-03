@@ -19,7 +19,7 @@ class RenderedPage:
 
 def _import_playwright():
     try:
-        from playwright.sync_api import sync_playwright
+        from playwright.sync_api import sync_playwright  # type: ignore[import-not-found]
     except ImportError as exc:
         raise RenderError(
             "Playwright is not installed. Install browser support with "

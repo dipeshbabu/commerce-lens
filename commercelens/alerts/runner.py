@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 from commercelens.alerts.config import MonitorConfig, load_monitor_config
 from commercelens.alerts.delivery import AlertDeliveryReport, deliver_alert
-from commercelens.alerts.rules import AlertEvent, event_from_change, rule_matches_change, snapshot_triggered_threshold
+from commercelens.alerts.rules import AlertEvent, AlertRule, event_from_change, rule_matches_change, snapshot_triggered_threshold
 from commercelens.core.monitor import monitor_product
 
 
@@ -37,7 +37,7 @@ def run_monitor_config(
             result.warnings.append(f"{target.url}: {exc}")
             continue
 
-        target_events: list[tuple[AlertEvent, object]] = []
+        target_events: list[tuple[AlertEvent, AlertRule]] = []
         if monitor_result.change:
             for rule in config.rules:
                 if rule_matches_change(rule, monitor_result.change):

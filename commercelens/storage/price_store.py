@@ -134,6 +134,8 @@ class PriceSnapshotStore:
                     json.dumps(snapshot.raw, ensure_ascii=False),
                 ),
             )
+            if cursor.lastrowid is None:
+                raise RuntimeError("SQLite did not return an id for the inserted price snapshot.")
             return int(cursor.lastrowid)
 
     def add_result(self, result: ProductExtractionResult) -> int:
@@ -142,6 +144,9 @@ class PriceSnapshotStore:
     def latest_snapshot(self, product_key: str) -> ProductSnapshot | None:
         rows = self.history(product_key, limit=1)
         return rows[0] if rows else None
+
+    def latest(self, product_key: str) -> ProductSnapshot | None:
+        return self.latest_snapshot(product_key)
 
     def history(self, product_key: str, limit: int = 100) -> list[ProductSnapshot]:
         with self._connect() as connection:
@@ -169,7 +174,7 @@ class PriceSnapshotStore:
             ).fetchall()
         return [self._row_to_snapshot(row) for row in rows]
 
-    def all_latest(self) -> list[ProductSnapshot]:
+    def all_latest(self, limit: int = 100) -> list[ProductSnapshot]:
         with self._connect() as connection:
             rows = connection.execute(
                 """
@@ -182,9 +187,14 @@ class PriceSnapshotStore:
                 ) latest
                 ON ps.product_key = latest.product_key AND ps.captured_at = latest.max_captured_at
                 ORDER BY ps.captured_at DESC
-                """
+                LIMIT ?
+                """,
+                (limit,),
             ).fetchall()
         return [self._row_to_snapshot(row) for row in rows]
+
+    def list_latest(self, limit: int = 100) -> list[ProductSnapshot]:
+        return self.all_latest(limit=limit)
 
     def detect_change(self, product_key: str) -> PriceChange | None:
         snapshots = self.history(product_key, limit=2)
@@ -193,8 +203,16 @@ class PriceSnapshotStore:
         current, previous = snapshots[0], snapshots[1]
         return compare_snapshots(previous, current)
 
-    def detect_changes(self, product_keys: Iterable[str] | None = None) -> list[PriceChange]:
-        keys = list(product_keys) if product_keys is not None else [item.product_key for item in self.all_latest()]
+    def detect_changes(
+        self,
+        product_keys: Iterable[str] | None = None,
+        limit: int = 100,
+    ) -> list[PriceChange]:
+        keys = (
+            list(product_keys)[:limit]
+            if product_keys is not None
+            else [item.product_key for item in self.all_latest(limit=limit)]
+        )
         changes: list[PriceChange] = []
         for key in keys:
             change = self.detect_change(key)
