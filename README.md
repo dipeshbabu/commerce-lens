@@ -140,7 +140,13 @@ render.yaml
 
 It creates a Docker-based API service, a Docker-based worker service, and a
 managed Postgres database. See `docs/render.md` for the deployment and
-smoke-test steps.
+smoke-test steps. After deployment, run:
+
+```bash
+python scripts/smoke_deploy.py \
+  --base-url https://YOUR-API.onrender.com \
+  --admin-token "$ADMIN_TOKEN"
+```
 
 ## Python SDK
 

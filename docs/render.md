@@ -62,6 +62,20 @@ COMMERCELENS_USER_AGENT=CommerceLens/0.9 (+mailto:ops@yourdomain.com)
 
 Replace `https://YOUR-API.onrender.com` and `$ADMIN_TOKEN`.
 
+Run the automated smoke test:
+
+```bash
+python scripts/smoke_deploy.py \
+  --base-url https://YOUR-API.onrender.com \
+  --admin-token "$ADMIN_TOKEN" \
+  --owner ops@example.com
+```
+
+The script checks `/health`, `/ready`, account creation, project creation, API
+key creation, product extraction, usage summary, and dashboard access.
+
+Manual checks:
+
 ```bash
 curl https://YOUR-API.onrender.com/health
 curl https://YOUR-API.onrender.com/ready
