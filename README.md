@@ -132,6 +132,16 @@ commercelens serve --host 0.0.0.0 --port 8000
 commercelens worker --poll-seconds 60
 ```
 
+For a hosted deployment, use the checked-in Render Blueprint:
+
+```text
+render.yaml
+```
+
+It creates a Docker-based API service, a Docker-based worker service, and a
+managed Postgres database. See `docs/render.md` for the deployment and
+smoke-test steps.
+
 ## Python SDK
 
 Extract a product page:

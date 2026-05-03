@@ -1,0 +1,69 @@
+services:
+  - type: web
+    name: commercelens-api
+    runtime: docker
+    plan: starter
+    autoDeployTrigger: checksPass
+    healthCheckPath: /ready
+    envVars:
+      - key: COMMERCELENS_ENV
+        value: production
+      - key: COMMERCELENS_STORE_BACKEND
+        value: postgres
+      - key: COMMERCELENS_REQUIRE_API_KEY
+        value: "true"
+      - key: COMMERCELENS_DATABASE_URL
+        fromDatabase:
+          name: commercelens-db
+          property: connectionString
+      - key: DATABASE_URL
+        fromDatabase:
+          name: commercelens-db
+          property: connectionString
+      - key: COMMERCELENS_POSTGRES_DSN
+        fromDatabase:
+          name: commercelens-db
+          property: connectionString
+      - key: COMMERCELENS_ADMIN_TOKEN
+        generateValue: true
+      - key: COMMERCELENS_USER_AGENT
+        value: CommerceLens/0.9 (+mailto:ops@example.com)
+      - key: COMMERCELENS_DEFAULT_TIMEOUT_SECONDS
+        value: "20"
+
+  - type: worker
+    name: commercelens-worker
+    runtime: docker
+    plan: starter
+    autoDeployTrigger: checksPass
+    dockerCommand: commercelens worker --poll-seconds 60 --limit 25
+    envVars:
+      - key: COMMERCELENS_ENV
+        value: production
+      - key: COMMERCELENS_STORE_BACKEND
+        value: postgres
+      - key: COMMERCELENS_REQUIRE_API_KEY
+        value: "true"
+      - key: COMMERCELENS_DATABASE_URL
+        fromDatabase:
+          name: commercelens-db
+          property: connectionString
+      - key: DATABASE_URL
+        fromDatabase:
+          name: commercelens-db
+          property: connectionString
+      - key: COMMERCELENS_POSTGRES_DSN
+        fromDatabase:
+          name: commercelens-db
+          property: connectionString
+      - key: COMMERCELENS_USER_AGENT
+        value: CommerceLens/0.9 (+mailto:ops@example.com)
+      - key: COMMERCELENS_DEFAULT_TIMEOUT_SECONDS
+        value: "20"
+
+databases:
+  - name: commercelens-db
+    databaseName: commercelens
+    user: commercelens
+    plan: basic-256mb
+    ipAllowList: []

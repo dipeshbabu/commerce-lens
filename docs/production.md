@@ -66,6 +66,17 @@ uvicorn commercelens.api.main:app --host 0.0.0.0 --port "$PORT"
 
 Run at least two API instances behind a load balancer for paid customers.
 
+## Render Blueprint
+
+For the first hosted deployment, use the checked-in `render.yaml` Blueprint. It
+creates:
+
+- a Docker-based FastAPI web service
+- a Docker-based worker service
+- a managed Postgres database
+
+See `docs/render.md` for the full deploy and smoke-test flow.
+
 ## Worker Service
 
 ```bash

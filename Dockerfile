@@ -14,8 +14,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY pyproject.toml README.md ./
 COPY commercelens ./commercelens
 
-RUN pip install --upgrade pip && pip install -e .
+RUN pip install --upgrade pip && pip install -e ".[postgres]"
 
 EXPOSE 8000
 
-CMD ["uvicorn", "commercelens.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "uvicorn commercelens.api.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
