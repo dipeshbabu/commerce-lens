@@ -1,1 +1,4 @@
-from .main import app, scrape_books, extract_attributes, scrape_page
+"""Repository marker for local test discovery.
+
+CommerceLens' importable package lives in `commercelens/`.
+"""

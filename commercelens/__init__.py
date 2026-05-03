@@ -1,5 +1,6 @@
 """CommerceLens public SDK."""
 
+from commercelens.version import __version__
 from commercelens.alerts.config import MonitorConfig, MonitorTarget, load_monitor_config, save_example_config
 from commercelens.alerts.delivery import AlertDeliveryReport, DeliveryResult, deliver_alert
 from commercelens.alerts.rules import AlertCondition, AlertDestination, AlertDestinationType, AlertEvent, AlertRule
@@ -57,10 +58,12 @@ __all__ = [
     "ProductMatchResult",
     "ProductRecord",
     "ProductSnapshot",
+    "ProductSnapshotBackend",
     "SQLiteSnapshotBackend",
     "StorageConfig",
     "WebhookEnvelope",
     "WebhookSubscription",
+    "__version__",
     "alert_event_to_webhook",
     "crawl_catalog",
     "deliver_alert",

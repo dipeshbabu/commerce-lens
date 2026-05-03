@@ -1,6 +1,6 @@
 # CommerceLens
 
-Open-source product, catalog, monitoring, alerting, matching, and price intelligence extraction for developers.
+Commercial product, catalog, monitoring, alerting, matching, and price intelligence extraction for developers.
 
 CommerceLens turns messy e-commerce pages into structured product, listing, price-history, alert, and product-matching data using schema.org JSON-LD parsing, OpenGraph metadata, DOM heuristics, confidence scoring, catalog crawling, optional browser rendering, SQLite/Postgres snapshots, change detection, configurable alert rules, dataset connectors, persistent monitoring jobs, worker execution, API keys, tenant-scoped usage metering, and a clean Python SDK / CLI / FastAPI interface.
 
@@ -10,9 +10,9 @@ CommerceLens turns messy e-commerce pages into structured product, listing, pric
 
 Most scraping tools return raw HTML, Markdown, screenshots, or brittle selector outputs. CommerceLens is designed around normalized commerce objects: product name, brand, price, currency, availability, images, description, SKU, ratings, review counts, canonical URL, listing product cards, confidence scores, extraction provenance, price history, product-level change events, alerts, cross-store product matches, persistent monitor jobs, run history, tenant-aware API keys, and metered hosted usage.
 
-CommerceLens is currently in early v0.8 development. The current release focuses on product page extraction, listing/category extraction, catalog crawling, JSONL/CSV export, optional Playwright rendering for JavaScript-heavy pages, local price intelligence through SQLite-backed product snapshots, optional PostgreSQL storage for hosted deployments, config-driven alert monitoring, dataset import/export, product matching, persistent monitoring jobs, worker execution, API keys, usage events, usage summaries, and Docker deployment.
+CommerceLens is currently in early v0.9 commercial product development. The current release focuses on product page extraction, listing/category extraction, catalog crawling, JSONL/CSV export, optional Playwright rendering for JavaScript-heavy pages, local price intelligence through SQLite-backed product snapshots, optional PostgreSQL storage for hosted deployments, config-driven alert monitoring, dataset import/export, product matching, persistent monitoring jobs, worker execution, API keys, usage events, usage summaries, and Docker deployment.
 
-## Features in v0.8
+## Features in v0.9
 
 - Product page extraction
 - Listing/category page extraction
@@ -660,4 +660,4 @@ CommerceLens is not trying to be a generic scraper first. It is a commerce data 
 
 ## License
 
-MIT
+Proprietary. This codebase is intended for a private hosted CommerceLens product unless a separate written license grants other rights.

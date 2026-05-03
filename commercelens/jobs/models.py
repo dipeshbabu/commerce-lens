@@ -45,10 +45,122 @@ class UsageMetric(str, Enum):
     match_request = "match_request"
 
 
+class ExtractionKind(str, Enum):
+    product = "product"
+    listing = "listing"
+
+
+class ExtractionStatus(str, Enum):
+    succeeded = "succeeded"
+    failed = "failed"
+
+
+class BillingPlan(str, Enum):
+    free = "free"
+    developer = "developer"
+    team = "team"
+    enterprise = "enterprise"
+
+
+class AccountStatus(str, Enum):
+    active = "active"
+    suspended = "suspended"
+    trialing = "trialing"
+
+
+class MemberRole(str, Enum):
+    owner = "owner"
+    admin = "admin"
+    member = "member"
+
+
 class TenantContext(BaseModel):
     account_id: str | None = None
     project_id: str | None = None
     owner: str | None = None
+
+
+class ExtractionCreate(BaseModel):
+    kind: ExtractionKind
+    status: ExtractionStatus
+    url: str | None = None
+    account_id: str | None = None
+    project_id: str | None = None
+    owner: str | None = None
+    api_key_id: str | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    product_count: int | None = None
+    payload: dict[str, Any] | None = None
+    error: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExtractionRecord(BaseModel):
+    id: str = Field(default_factory=lambda: f"ext_{uuid4().hex[:16]}")
+    kind: ExtractionKind
+    status: ExtractionStatus
+    url: str | None = None
+    account_id: str | None = None
+    project_id: str | None = None
+    owner: str | None = None
+    api_key_id: str | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    product_count: int | None = None
+    payload: dict[str, Any] | None = None
+    error: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: str = Field(default_factory=utc_now_iso)
+
+
+class AccountCreate(BaseModel):
+    name: str
+    owner: str | None = None
+    billing_plan: BillingPlan = BillingPlan.free
+    status: AccountStatus = AccountStatus.trialing
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AccountRecord(BaseModel):
+    id: str = Field(default_factory=lambda: f"acct_{uuid4().hex[:12]}")
+    name: str
+    owner: str | None = None
+    billing_plan: BillingPlan = BillingPlan.free
+    status: AccountStatus = AccountStatus.trialing
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: str = Field(default_factory=utc_now_iso)
+    updated_at: str = Field(default_factory=utc_now_iso)
+
+
+class ProjectCreate(BaseModel):
+    name: str
+    slug: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProjectRecord(BaseModel):
+    id: str = Field(default_factory=lambda: f"proj_{uuid4().hex[:12]}")
+    account_id: str
+    name: str
+    slug: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: str = Field(default_factory=utc_now_iso)
+    updated_at: str = Field(default_factory=utc_now_iso)
+
+
+class MemberCreate(BaseModel):
+    email: str
+    role: MemberRole = MemberRole.member
+    name: str | None = None
+
+
+class MemberRecord(BaseModel):
+    id: str = Field(default_factory=lambda: f"mem_{uuid4().hex[:12]}")
+    account_id: str
+    email: str
+    role: MemberRole = MemberRole.member
+    name: str | None = None
+    created_at: str = Field(default_factory=utc_now_iso)
+    updated_at: str = Field(default_factory=utc_now_iso)
 
 
 class MonitoringJob(BaseModel):
@@ -128,19 +240,12 @@ class WorkerTickResult(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
-class BillingPlan(str, Enum):
-    free = "free"
-    developer = "developer"
-    team = "team"
-    enterprise = "enterprise"
-
-
 class ApiKeyCreate(BaseModel):
     name: str
     owner: str | None = None
     account_id: str | None = None
     project_id: str | None = None
-    scopes: list[str] = Field(default_factory=lambda: ["jobs:read", "jobs:write", "runs:read", "usage:read"])
+    scopes: list[str] = Field(default_factory=lambda: ["extract:write", "extractions:read", "jobs:read", "jobs:write", "runs:read", "usage:read"])
     billing_plan: BillingPlan = BillingPlan.free
     monthly_quota_overrides: dict[UsageMetric, int] = Field(default_factory=dict)
 

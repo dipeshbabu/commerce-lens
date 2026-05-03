@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from fastapi import Header, HTTPException, status
+from fastapi import Header, HTTPException, Request, status
 
 from commercelens.jobs.models import ApiKeyRecord
 from commercelens.jobs.store import JobStore
@@ -51,4 +51,21 @@ def require_admin_token(x_admin_token: str | None = Header(default=None)) -> Non
     if not expected:
         return
     if not x_admin_token or x_admin_token != expected:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid admin token.")
+
+
+def require_admin_access(
+    request: Request,
+    x_admin_token: str | None = Header(default=None),
+) -> None:
+    """Admin guard for JSON APIs and browser dashboard routes.
+
+    Dashboard pages cannot conveniently set custom headers, so the same admin
+    token is also accepted through `?admin_token=...` for private operator use.
+    """
+    expected = os.getenv("COMMERCELENS_ADMIN_TOKEN")
+    if not expected:
+        return
+    provided = x_admin_token or request.query_params.get("admin_token")
+    if provided != expected:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid admin token.")

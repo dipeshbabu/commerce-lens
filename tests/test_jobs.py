@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from commercelens.alerts.config import AlertRule, MonitorConfig, MonitorTarget
+from commercelens.alerts.rules import AlertCondition
 from commercelens.jobs.models import ApiKeyCreate, JobStatus, MonitoringJobCreate, MonitoringJobUpdate, ScheduleKind
 from commercelens.jobs.store import JobStore
 
@@ -10,7 +11,7 @@ from commercelens.jobs.store import JobStore
 def sample_config() -> MonitorConfig:
     return MonitorConfig(
         targets=[MonitorTarget(url="https://example.com/product", name="Example Product")],
-        rules=[AlertRule(type="price_drop", threshold_percent=5)],
+        rules=[AlertRule(name="price drop", condition=AlertCondition.PRICE_DROP)],
         channels=[],
     )
 

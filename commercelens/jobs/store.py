@@ -8,14 +8,24 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from commercelens.jobs.models import (
+    AccountCreate,
+    AccountRecord,
     ApiKeyCreate,
     ApiKeyCreateResult,
     ApiKeyRecord,
+    ExtractionCreate,
+    ExtractionKind,
+    ExtractionRecord,
+    ExtractionStatus,
     JobRun,
+    MemberCreate,
+    MemberRecord,
     JobStatus,
     MonitoringJob,
     MonitoringJobCreate,
     MonitoringJobUpdate,
+    ProjectCreate,
+    ProjectRecord,
     RunStatus,
     ScheduleKind,
     UsageEvent,
@@ -39,6 +49,52 @@ class JobStore:
 
     def _ensure_schema(self) -> None:
         with self._connect() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS accounts (
+                    id TEXT PRIMARY KEY,
+                    payload TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    owner TEXT,
+                    billing_plan TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_accounts_status ON accounts(status)")
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS projects (
+                    id TEXT PRIMARY KEY,
+                    account_id TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    slug TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(account_id) REFERENCES accounts(id)
+                )
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_projects_account_id ON projects(account_id)")
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS account_members (
+                    id TEXT PRIMARY KEY,
+                    account_id TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    email TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(account_id) REFERENCES accounts(id)
+                )
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_members_account_id ON account_members(account_id)")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_members_account_email ON account_members(account_id, email)")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS monitoring_jobs (
@@ -122,11 +178,158 @@ class JobStore:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_usage_created_at ON usage_events(created_at)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_usage_metric ON usage_events(metric)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_usage_account_project ON usage_events(account_id, project_id)")
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS extraction_records (
+                    id TEXT PRIMARY KEY,
+                    payload TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    url TEXT,
+                    account_id TEXT,
+                    project_id TEXT,
+                    owner TEXT,
+                    api_key_id TEXT,
+                    confidence REAL,
+                    product_count INTEGER,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_extractions_created_at ON extraction_records(created_at)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_extractions_account_project ON extraction_records(account_id, project_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_extractions_kind_status ON extraction_records(kind, status)")
 
     def _ensure_column(self, conn: sqlite3.Connection, table: str, column: str, column_type: str) -> None:
         columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
         if column not in columns:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}")
+
+    def create_account(self, request: AccountCreate) -> AccountRecord:
+        account = AccountRecord(**request.model_dump())
+        self.save_account(account)
+        return account
+
+    def save_account(self, account: AccountRecord) -> AccountRecord:
+        account.updated_at = utc_now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO accounts (id, payload, name, owner, billing_plan, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, name=excluded.name, owner=excluded.owner, billing_plan=excluded.billing_plan, status=excluded.status, updated_at=excluded.updated_at
+                """,
+                (
+                    account.id,
+                    account.model_dump_json(exclude_none=True),
+                    account.name,
+                    account.owner,
+                    account.billing_plan.value,
+                    account.status.value,
+                    account.created_at,
+                    account.updated_at,
+                ),
+            )
+        return account
+
+    def get_account(self, account_id: str) -> AccountRecord | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT payload FROM accounts WHERE id = ?", (account_id,)).fetchone()
+        return AccountRecord.model_validate_json(row["payload"]) if row else None
+
+    def list_accounts(self, limit: int = 100) -> list[AccountRecord]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT payload FROM accounts ORDER BY updated_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [AccountRecord.model_validate_json(row["payload"]) for row in rows]
+
+    def create_project(self, account_id: str, request: ProjectCreate) -> ProjectRecord:
+        if not self.get_account(account_id):
+            raise ValueError(f"Account not found: {account_id}")
+        project = ProjectRecord(account_id=account_id, **request.model_dump())
+        self.save_project(project)
+        return project
+
+    def save_project(self, project: ProjectRecord) -> ProjectRecord:
+        project.updated_at = utc_now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO projects (id, account_id, payload, name, slug, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, name=excluded.name, slug=excluded.slug, updated_at=excluded.updated_at
+                """,
+                (
+                    project.id,
+                    project.account_id,
+                    project.model_dump_json(exclude_none=True),
+                    project.name,
+                    project.slug,
+                    project.created_at,
+                    project.updated_at,
+                ),
+            )
+        return project
+
+    def get_project(self, project_id: str, account_id: str | None = None) -> ProjectRecord | None:
+        query = "SELECT payload FROM projects WHERE id = ?"
+        params: list[object] = [project_id]
+        if account_id:
+            query += " AND account_id = ?"
+            params.append(account_id)
+        with self._connect() as conn:
+            row = conn.execute(query, params).fetchone()
+        return ProjectRecord.model_validate_json(row["payload"]) if row else None
+
+    def list_projects(self, account_id: str | None = None, limit: int = 100) -> list[ProjectRecord]:
+        query = "SELECT payload FROM projects WHERE 1=1"
+        params: list[object] = []
+        if account_id:
+            query += " AND account_id = ?"
+            params.append(account_id)
+        query += " ORDER BY updated_at DESC LIMIT ?"
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [ProjectRecord.model_validate_json(row["payload"]) for row in rows]
+
+    def create_member(self, account_id: str, request: MemberCreate) -> MemberRecord:
+        if not self.get_account(account_id):
+            raise ValueError(f"Account not found: {account_id}")
+        member = MemberRecord(account_id=account_id, **request.model_dump())
+        self.save_member(member)
+        return member
+
+    def save_member(self, member: MemberRecord) -> MemberRecord:
+        member.updated_at = utc_now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO account_members (id, account_id, payload, email, role, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(account_id, email) DO UPDATE SET payload=excluded.payload, role=excluded.role, updated_at=excluded.updated_at
+                """,
+                (
+                    member.id,
+                    member.account_id,
+                    member.model_dump_json(exclude_none=True),
+                    member.email.lower(),
+                    member.role.value,
+                    member.created_at,
+                    member.updated_at,
+                ),
+            )
+        return member
+
+    def list_members(self, account_id: str, limit: int = 100) -> list[MemberRecord]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT payload FROM account_members WHERE account_id = ? ORDER BY updated_at DESC LIMIT ?",
+                (account_id, limit),
+            ).fetchall()
+        return [MemberRecord.model_validate_json(row["payload"]) for row in rows]
 
     def create_job(self, request: MonitoringJobCreate) -> MonitoringJob:
         job = MonitoringJob(**request.model_dump())
@@ -134,6 +337,62 @@ class JobStore:
         self.save_job(job)
         self.record_usage(UsageEvent(metric=UsageMetric.api_request, account_id=job.account_id, project_id=job.project_id, owner=job.owner, job_id=job.id, metadata={"operation": "create_job"}))
         return job
+
+    def record_extraction(self, request: ExtractionCreate) -> ExtractionRecord:
+        record = ExtractionRecord(**request.model_dump())
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO extraction_records (id, payload, kind, status, url, account_id, project_id, owner, api_key_id, confidence, product_count, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record.id,
+                    record.model_dump_json(exclude_none=True),
+                    record.kind.value if isinstance(record.kind, ExtractionKind) else record.kind,
+                    record.status.value if isinstance(record.status, ExtractionStatus) else record.status,
+                    record.url,
+                    record.account_id,
+                    record.project_id,
+                    record.owner,
+                    record.api_key_id,
+                    record.confidence,
+                    record.product_count,
+                    record.created_at,
+                ),
+            )
+        return record
+
+    def get_extraction(self, extraction_id: str, account_id: str | None = None, project_id: str | None = None) -> ExtractionRecord | None:
+        query = "SELECT payload FROM extraction_records WHERE id = ?"
+        params: list[object] = [extraction_id]
+        query, params = self._add_tenant_filters(query, params, account_id, project_id)
+        with self._connect() as conn:
+            row = conn.execute(query, params).fetchone()
+        return ExtractionRecord.model_validate_json(row["payload"]) if row else None
+
+    def list_extractions(
+        self,
+        kind: ExtractionKind | None = None,
+        status: ExtractionStatus | None = None,
+        account_id: str | None = None,
+        project_id: str | None = None,
+        limit: int = 100,
+    ) -> list[ExtractionRecord]:
+        query = "SELECT payload FROM extraction_records WHERE 1=1"
+        params: list[object] = []
+        query, params = self._add_tenant_filters(query, params, account_id, project_id)
+        if kind:
+            query += " AND kind = ?"
+            params.append(kind.value)
+        if status:
+            query += " AND status = ?"
+            params.append(status.value)
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [ExtractionRecord.model_validate_json(row["payload"]) for row in rows]
 
     def save_job(self, job: MonitoringJob) -> MonitoringJob:
         job.updated_at = utc_now_iso()
@@ -289,6 +548,16 @@ class JobStore:
         with self._connect() as conn:
             conn.execute("UPDATE api_keys SET payload = ?, disabled = ?, account_id = ?, project_id = ?, owner = ? WHERE id = ?", (key.model_dump_json(exclude_none=True), 1 if key.disabled else 0, key.account_id, key.project_id, key.owner, key.id))
         return key
+
+    def list_api_keys(self, account_id: str | None = None, project_id: str | None = None, limit: int = 100) -> list[ApiKeyRecord]:
+        query = "SELECT payload FROM api_keys WHERE 1=1"
+        params: list[object] = []
+        query, params = self._add_tenant_filters(query, params, account_id, project_id)
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [ApiKeyRecord.model_validate_json(row["payload"]) for row in rows]
 
     def record_usage(self, event: UsageEvent) -> UsageEvent:
         with self._connect() as conn:

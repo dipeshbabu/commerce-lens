@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse, urlunparse
 
 from bs4 import BeautifulSoup, Tag
 
@@ -93,7 +93,25 @@ def _product_url(card: Tag, base_url: str | None) -> str | None:
     link = preferred or card.select_one("a[href]")
     if not link or not link.get("href"):
         return None
-    return normalize_url(str(link["href"]), base_url=base_url)
+    return _normalize_listing_url(str(link["href"]), base_url=base_url)
+
+
+def _normalize_listing_url(raw_url: str, base_url: str | None) -> str:
+    normalized = normalize_url(raw_url, base_url=base_url)
+    if not base_url:
+        return normalized
+
+    parsed = urlparse(normalized)
+    parts = [part for part in parsed.path.split("/") if part]
+    collapsed: list[str] = []
+    for part in parts:
+        if collapsed and collapsed[-1] == part:
+            continue
+        collapsed.append(part)
+    if len(collapsed) == len(parts):
+        return normalized
+    path = "/" + "/".join(collapsed)
+    return urlunparse((parsed.scheme, parsed.netloc, path, "", parsed.query, ""))
 
 
 def _image_url(card: Tag, base_url: str | None) -> str | None:
