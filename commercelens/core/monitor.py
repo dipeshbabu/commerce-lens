@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from commercelens.extractors.product import extract_product
 from commercelens.storage.backends import ProductSnapshotBackend, StorageConfig, make_snapshot_backend
@@ -16,23 +16,21 @@ from commercelens.storage.price_store import (
 
 
 class MonitorResult(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     product_key: str
     snapshot_id: int | None = None
     snapshot: ProductSnapshot
     change: PriceChange | None = None
     has_change: bool = False
 
-    class Config:
-        arbitrary_types_allowed = True
-
 
 class BatchMonitorResult(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     results: list[MonitorResult] = Field(default_factory=list)
     changes: list[PriceChange] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-
-    class Config:
-        arbitrary_types_allowed = True
 
 
 def monitor_product(

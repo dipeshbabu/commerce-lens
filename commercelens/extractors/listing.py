@@ -61,7 +61,7 @@ NEXT_SELECTORS = [
     "a.next",
     "a[aria-label*='Next']",
     "a[aria-label*='next']",
-    "a:contains('Next')",
+    "a:-soup-contains('Next')",
 ]
 
 
