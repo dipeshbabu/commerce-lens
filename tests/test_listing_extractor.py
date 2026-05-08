@@ -34,3 +34,24 @@ def test_extract_listing_products() -> None:
     assert result.products[0].image_url == "https://books.toscrape.com/catalogue/media/book.jpg"
     assert result.next_page_url == "https://books.toscrape.com/catalogue/page-2.html"
     assert result.confidence > 0.7
+
+
+def test_extract_listing_price_from_plain_text_span() -> None:
+    html = """
+    <html>
+      <body>
+        <a class="product-card" href="/products/widget-a">
+          <img src="https://cdn.example.com/a.jpg" alt="Widget A">
+          <h2>Widget A</h2>
+          <span>$19.99</span>
+        </a>
+      </body>
+    </html>
+    """
+
+    result = extract_listing_from_html(html, url="https://shop.example.com/collections/widgets")
+
+    assert result.product_count == 1
+    assert result.products[0].price is not None
+    assert result.products[0].price.amount == 19.99
+    assert result.products[0].price.currency == "USD"

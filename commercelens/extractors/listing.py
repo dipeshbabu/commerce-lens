@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from urllib.parse import urljoin, urlparse, urlunparse
 
@@ -48,6 +49,12 @@ PRICE_SELECTORS = [
     "[class*='price']",
 ]
 
+PRICE_HINT_RE = re.compile(
+    r"(?i)(?:USD|GBP|EUR|JPY|INR|AUD|CAD|NZD|CHF|CNY|\$|\u00a3|\u20ac|\u00a5|\u20b9)"
+    r"\s*[0-9]|[0-9][0-9,]*(?:\.[0-9]{1,2})?\s*"
+    r"(?:USD|GBP|EUR|JPY|INR|AUD|CAD|NZD|CHF|CNY)"
+)
+
 AVAILABILITY_SELECTORS = [
     ".availability",
     ".stock",
@@ -86,6 +93,27 @@ def _first_text(card: Tag, selectors: list[str]) -> tuple[str | None, str | None
         if value:
             return value, selector
     return None, None
+
+
+def _price_text(card: Tag) -> tuple[str | None, str | None]:
+    raw_price, selector = _first_text(card, PRICE_SELECTORS)
+    price = parse_price(raw_price)
+    if price and price.amount is not None:
+        return raw_price, selector
+
+    for node in card.find_all(True):
+        for attr in ("content", "aria-label", "title", "data-price", "data-sale-price"):
+            value = node.get(attr)
+            text = _clean_text(str(value)) if value else None
+            if text and PRICE_HINT_RE.search(text):
+                return text, f"[{attr}]"
+
+    for text in card.stripped_strings:
+        cleaned = _clean_text(text)
+        if cleaned and PRICE_HINT_RE.search(cleaned):
+            return cleaned, "text"
+
+    return raw_price, selector
 
 
 def _product_url(card: Tag, base_url: str | None) -> str | None:
@@ -180,7 +208,7 @@ def extract_listing_from_html(html: str, url: str | None = None) -> ListingExtra
 
     for position, (card, selector) in enumerate(_candidate_cards(soup), start=1):
         name, _name_selector = _first_text(card, NAME_SELECTORS)
-        raw_price, _price_selector = _first_text(card, PRICE_SELECTORS)
+        raw_price, _price_selector = _price_text(card)
         raw_availability, _availability_selector = _first_text(card, AVAILABILITY_SELECTORS)
         product_url = _product_url(card, url)
         image_url = _image_url(card, url)
