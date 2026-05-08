@@ -6,7 +6,7 @@ from html import escape
 from typing import Sequence
 from urllib.parse import urlencode
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from commercelens.alerts.runner import MonitorRunResult, run_monitor_config, run_monitor_config_file
@@ -14,6 +14,11 @@ from commercelens.api.auth import get_job_store, require_admin_access, require_a
 from commercelens.api.domain_limits import require_domain_quota, url_domain
 from commercelens.api.quota import quota_decision, require_quota, require_scope
 from commercelens.connectors.datasets import DatasetLoadResult
+from commercelens.connectors.stripe import (
+    apply_subscription_event,
+    parse_stripe_event,
+    verify_stripe_signature,
+)
 from commercelens.core.crawler import CatalogCrawlResult, crawl_catalog
 from commercelens.core.fetcher import FetchError, fetch_html
 from commercelens.core.monitor import BatchMonitorResult, MonitorResult, monitor_product, monitor_products
@@ -652,6 +657,28 @@ def billing_usage_endpoint(key: ApiKeyRecord | None = Depends(require_api_key)) 
     require_scope(key, "usage:read")
     decisions = [quota_decision(key, metric, 0) for metric in UsageMetric]
     return BillingUsageSnapshot(account_id=key.account_id, project_id=key.project_id, api_key_id=key.id, billing_plan=key.billing_plan, period_start=decisions[0].period_start, period_end=decisions[0].period_end, blocked=any(not decision.allowed for decision in decisions), items=[BillingUsageItem(metric=decision.metric, used=decision.used, limit=decision.limit, remaining=decision.remaining) for decision in decisions])
+
+
+@app.post("/v1/billing/stripe/webhook")
+async def stripe_webhook_endpoint(
+    request: Request,
+    stripe_signature: str | None = Header(default=None, alias="Stripe-Signature"),
+    store: JobStore = Depends(get_job_store),
+) -> dict:
+    secret = os.getenv("STRIPE_WEBHOOK_SECRET")
+    if not secret:
+        raise HTTPException(status_code=503, detail="STRIPE_WEBHOOK_SECRET is not configured.")
+    if not stripe_signature:
+        raise HTTPException(status_code=400, detail="Missing Stripe-Signature header.")
+    payload = await request.body()
+    try:
+        verify_stripe_signature(payload, stripe_signature, secret)
+        event = parse_stripe_event(payload)
+        if not str(event["type"]).startswith("customer.subscription."):
+            return {"applied": False, "reason": "ignored_event_type", "type": event["type"]}
+        return apply_subscription_event(store, event)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/v1/records/normalize", response_model=DatasetLoadResult)

@@ -138,6 +138,28 @@ Hosted extraction, crawl, and monitor routes reject requests with HTTP 429 when
 the monthly domain budget is exhausted. Usage events include a `domain` metadata
 field so operators can audit domain consumption.
 
+## Stripe Billing Sync
+
+Set `STRIPE_WEBHOOK_SECRET` and point Stripe subscription webhooks at:
+
+```text
+https://api.example.com/v1/billing/stripe/webhook
+```
+
+CommerceLens verifies the `Stripe-Signature` header and applies
+`customer.subscription.*` events. Include these metadata fields on the Stripe
+subscription:
+
+```text
+account_id=acct_...
+billing_plan=developer|team|enterprise
+```
+
+Active subscriptions set the account to `active`, trials set it to `trialing`,
+and deleted or non-active subscriptions suspend the account. The webhook stores
+the Stripe customer ID, subscription ID, and subscription status in account
+metadata for operator review.
+
 ## Sellable Product Baseline
 
 Before selling to companies, the hosted service should support:

@@ -56,6 +56,7 @@ CommerceLens is currently in early v0.9 commercial product development. The curr
 - Tenant context through account_id, project_id, owner, and api_key_id
 - Usage event logging and usage summaries
 - API-key monthly domain quotas
+- Stripe subscription webhook plan sync
 - SQLite or Postgres job/run/API-key/usage store
 - Docker and docker-compose deployment files
 - Python SDK
