@@ -1,0 +1,13 @@
+{
+  "kind": "product",
+  "source_url": "https://store.example.com/products/tee",
+  "fields": {
+    "product.name": "Shopify Benchmark Tee",
+    "product.brand": "Acme Apparel",
+    "product.sku": "TEE-001",
+    "product.price.amount": 24.99,
+    "product.price.currency": "USD",
+    "product.availability": "out_of_stock",
+    "product.metadata.adapter": "shopify"
+  }
+}

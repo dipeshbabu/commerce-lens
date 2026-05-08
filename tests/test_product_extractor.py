@@ -67,3 +67,38 @@ def test_extract_product_from_dom_fallback() -> None:
     assert result.product.price.amount == 42.5
     assert result.product.availability.value == "in_stock"
     assert result.product.image_urls == ["https://example.com/fallback.jpg"]
+
+
+def test_extract_product_from_shopify_adapter() -> None:
+    html = """
+    <html>
+      <head>
+        <script>
+          ShopifyAnalytics = {meta: {}};
+          ShopifyAnalytics.meta.product = {
+            "id": 123,
+            "title": "Shopify Jacket",
+            "vendor": "Northwind",
+            "currency": "USD",
+            "featured_image": "//cdn.shopify.com/jacket.jpg",
+            "variants": [
+              {"id": 456, "sku": "JKT-001", "price": 12999, "available": true}
+            ]
+          };
+        </script>
+      </head>
+      <body></body>
+    </html>
+    """
+
+    result = extract_product_from_html(html, url="https://store.example.com/products/jacket")
+
+    assert result.product.name == "Shopify Jacket"
+    assert result.product.brand == "Northwind"
+    assert result.product.sku == "JKT-001"
+    assert result.product.price is not None
+    assert result.product.price.amount == 129.99
+    assert result.product.price.currency == "USD"
+    assert result.product.availability.value == "in_stock"
+    assert result.product.metadata["adapter"] == "shopify"
+    assert result.fields["price"].source == "shopify_adapter"

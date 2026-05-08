@@ -23,6 +23,7 @@ CommerceLens is currently in early v0.9 commercial product development. The curr
 - JSON-LD / schema.org Product parsing
 - OpenGraph metadata fallback
 - DOM heuristic fallback
+- Shopify product adapter
 - Product card extraction
 - Pagination discovery
 - Price and currency normalization

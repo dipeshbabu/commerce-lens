@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 
 from commercelens.core.fetcher import fetch_html
 from commercelens.core.renderer import render_html
+from commercelens.extractors.adapters import apply_shopify_product_adapter
 from commercelens.extractors.availability import normalize_availability
 from commercelens.extractors.jsonld import first_jsonld_product
 from commercelens.extractors.opengraph import extract_opengraph
@@ -229,6 +230,8 @@ def extract_product_from_html(html: str, url: str | None = None) -> ProductExtra
         fields["image_urls"] = ExtractedField(
             value=product.image_urls, confidence=0.75, source="opengraph"
         )
+
+    apply_shopify_product_adapter(soup, product, fields, url=url)
 
     if not product.name:
         name, selector = _first_text(soup, TITLE_SELECTORS)
