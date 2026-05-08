@@ -17,5 +17,10 @@ class ProductIdentityGraphRequest(BaseModel):
     threshold: float = 0.72
 
 
+class CatalogDiffRequest(BaseModel):
+    before: list[ProductRecord] = Field(default_factory=list)
+    after: list[ProductRecord] = Field(default_factory=list)
+
+
 class NormalizeRecordsRequest(BaseModel):
     records: list[ProductRecord] = Field(default_factory=list)

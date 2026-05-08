@@ -28,11 +28,13 @@ from commercelens.extractors.product import extract_product, extract_product_fro
 from commercelens.jobs.models import AccountCreate, AccountRecord, ApiKeyCreate, ApiKeyCreateResult, ApiKeyRecord, BillingUsageItem, BillingUsageSnapshot, ExtractionCreate, ExtractionKind, ExtractionRecord, ExtractionStatus, JobRun, JobStatus, MemberCreate, MemberRecord, MonitoringJob, MonitoringJobCreate, MonitoringJobUpdate, ProjectCreate, ProjectRecord, UsageEvent, UsageMetric, UsageSummary, WorkerTickResult
 from commercelens.jobs.store import JobStore
 from commercelens.jobs.worker import MonitoringWorker, run_job_now
+from commercelens.matching.catalog_diff import CatalogDiffResult, diff_catalogs
 from commercelens.matching.identity import ProductIdentityGraph, build_identity_graph
 from commercelens.matching.products import ProductMatchResult, match_products
 from commercelens.schemas.alerts import RunMonitorConfigFileRequest, RunMonitorConfigRequest
 from commercelens.schemas.connectors import (
     MatchProductsRequest,
+    CatalogDiffRequest,
     NormalizeRecordsRequest,
     ProductIdentityGraphRequest,
 )
@@ -769,3 +771,25 @@ def product_identity_graph_endpoint(
         metadata={"records": len(request.records), "clusters": len(graph.clusters)},
     )
     return graph
+
+
+@app.post("/v1/catalog/diff", response_model=CatalogDiffResult)
+def catalog_diff_endpoint(
+    request: CatalogDiffRequest,
+    store: JobStore = Depends(get_job_store),
+    key: ApiKeyRecord | None = Depends(require_api_key),
+) -> CatalogDiffResult:
+    _meter(key, UsageMetric.match_request, scope="match:write")
+    result = diff_catalogs(request.before, request.after)
+    _record_usage(
+        store,
+        key,
+        UsageMetric.match_request,
+        route="/v1/catalog/diff",
+        metadata={
+            "before": len(request.before),
+            "after": len(request.after),
+            "changes": result.total_changes,
+        },
+    )
+    return result

@@ -22,6 +22,7 @@ from commercelens.jobs.migrations import migrate_postgres_dsn
 from commercelens.jobs.models import ApiKeyCreate, BillingPlan, BillingUsageItem, BillingUsageSnapshot, JobStatus, MonitoringJobCreate, MonitoringJobUpdate, ScheduleKind, UsageMetric
 from commercelens.jobs.store import JobStore
 from commercelens.jobs.worker import MonitoringWorker, run_job_now
+from commercelens.matching.catalog_diff import diff_catalogs
 from commercelens.matching.identity import build_identity_graph
 from commercelens.matching.products import match_products
 from commercelens.quality.benchmarks import run_benchmark_suite
@@ -323,6 +324,23 @@ def identity_graph(
     payload = graph.model_dump(mode="json", exclude_none=True)
     if load_result.warnings:
         payload["warnings"] = load_result.warnings
+    _write_or_print(payload, out=out)
+
+
+@app.command("catalog-diff")
+def catalog_diff(
+    before: Path = typer.Argument(...),
+    after: Path = typer.Argument(...),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+) -> None:
+    """Diff two normalized product datasets for added, removed, and changed products."""
+    before_result = load_product_records(before)
+    after_result = load_product_records(after)
+    result = diff_catalogs(before_result.records, after_result.records)
+    payload = result.model_dump(mode="json", exclude_none=True)
+    warnings = before_result.warnings + after_result.warnings
+    if warnings:
+        payload["warnings"] = warnings
     _write_or_print(payload, out=out)
 
 

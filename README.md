@@ -396,6 +396,12 @@ Build product identity clusters across a single dataset:
 commercelens identity-graph examples/products_a.csv --threshold 0.72 --out identity.json
 ```
 
+Diff two catalog exports:
+
+```bash
+commercelens catalog-diff before.csv after.csv --out catalog_changes.json
+```
+
 Show price history for a product key:
 
 ```bash
@@ -586,6 +592,14 @@ Build product identity clusters:
 curl -X POST http://127.0.0.1:8000/v1/identity/graph \
   -H "Content-Type: application/json" \
   -d '{"records":[{"name":"Nike Air Max 90","brand":"Nike"},{"name":"Nike Air Max 90 Shoes","brand":"Nike"}]}'
+```
+
+Diff two catalogs:
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/catalog/diff \
+  -H "Content-Type: application/json" \
+  -d '{"before":[{"url":"https://shop.test/a","amount":10}],"after":[{"url":"https://shop.test/a","amount":8}]}'
 ```
 
 Run alert monitoring from a file path:
