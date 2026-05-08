@@ -28,9 +28,14 @@ from commercelens.extractors.product import extract_product, extract_product_fro
 from commercelens.jobs.models import AccountCreate, AccountRecord, ApiKeyCreate, ApiKeyCreateResult, ApiKeyRecord, BillingUsageItem, BillingUsageSnapshot, ExtractionCreate, ExtractionKind, ExtractionRecord, ExtractionStatus, JobRun, JobStatus, MemberCreate, MemberRecord, MonitoringJob, MonitoringJobCreate, MonitoringJobUpdate, ProjectCreate, ProjectRecord, UsageEvent, UsageMetric, UsageSummary, WorkerTickResult
 from commercelens.jobs.store import JobStore
 from commercelens.jobs.worker import MonitoringWorker, run_job_now
+from commercelens.matching.identity import ProductIdentityGraph, build_identity_graph
 from commercelens.matching.products import ProductMatchResult, match_products
 from commercelens.schemas.alerts import RunMonitorConfigFileRequest, RunMonitorConfigRequest
-from commercelens.schemas.connectors import MatchProductsRequest, NormalizeRecordsRequest
+from commercelens.schemas.connectors import (
+    MatchProductsRequest,
+    NormalizeRecordsRequest,
+    ProductIdentityGraphRequest,
+)
 from commercelens.schemas.dashboard import DashboardSummary
 from commercelens.schemas.listing import CatalogCrawlRequest, ListingExtractionRequest, ListingExtractionResult
 from commercelens.schemas.monitor import MonitorBatchRequest, MonitorProductRequest, PriceHistoryRequest
@@ -746,3 +751,21 @@ def match_products_endpoint(request: MatchProductsRequest, store: JobStore = Dep
     result = match_products(request.left, request.right, threshold=request.threshold, top_k=request.top_k)
     _record_usage(store, key, UsageMetric.match_request, route="/v1/match/products", metadata={"left": len(request.left), "right": len(request.right), "matches": len(result.matches)})
     return result
+
+
+@app.post("/v1/identity/graph", response_model=ProductIdentityGraph)
+def product_identity_graph_endpoint(
+    request: ProductIdentityGraphRequest,
+    store: JobStore = Depends(get_job_store),
+    key: ApiKeyRecord | None = Depends(require_api_key),
+) -> ProductIdentityGraph:
+    _meter(key, UsageMetric.match_request, scope="match:write")
+    graph = build_identity_graph(request.records, threshold=request.threshold)
+    _record_usage(
+        store,
+        key,
+        UsageMetric.match_request,
+        route="/v1/identity/graph",
+        metadata={"records": len(request.records), "clusters": len(graph.clusters)},
+    )
+    return graph

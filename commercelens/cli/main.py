@@ -22,6 +22,7 @@ from commercelens.jobs.migrations import migrate_postgres_dsn
 from commercelens.jobs.models import ApiKeyCreate, BillingPlan, BillingUsageItem, BillingUsageSnapshot, JobStatus, MonitoringJobCreate, MonitoringJobUpdate, ScheduleKind, UsageMetric
 from commercelens.jobs.store import JobStore
 from commercelens.jobs.worker import MonitoringWorker, run_job_now
+from commercelens.matching.identity import build_identity_graph
 from commercelens.matching.products import match_products
 from commercelens.quality.benchmarks import run_benchmark_suite
 from commercelens.storage.exporters import write_csv, write_jsonl
@@ -307,6 +308,21 @@ def match_records(left: Path = typer.Argument(...), right: Path = typer.Argument
     right_result = load_product_records(right)
     result = match_products(left_result.records, right_result.records, threshold=threshold, top_k=top_k)
     payload = {"matches": [match.model_dump(mode="json", exclude_none=True) for match in result.matches], "warnings": left_result.warnings + right_result.warnings}
+    _write_or_print(payload, out=out)
+
+
+@app.command("identity-graph")
+def identity_graph(
+    records: Path = typer.Argument(...),
+    threshold: float = typer.Option(0.72, "--threshold"),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+) -> None:
+    """Build canonical product identity clusters from one product dataset."""
+    load_result = load_product_records(records)
+    graph = build_identity_graph(load_result.records, threshold=threshold)
+    payload = graph.model_dump(mode="json", exclude_none=True)
+    if load_result.warnings:
+        payload["warnings"] = load_result.warnings
     _write_or_print(payload, out=out)
 
 

@@ -12,5 +12,10 @@ class MatchProductsRequest(BaseModel):
     top_k: int = 1
 
 
+class ProductIdentityGraphRequest(BaseModel):
+    records: list[ProductRecord] = Field(default_factory=list)
+    threshold: float = 0.72
+
+
 class NormalizeRecordsRequest(BaseModel):
     records: list[ProductRecord] = Field(default_factory=list)

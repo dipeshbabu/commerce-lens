@@ -390,6 +390,12 @@ Match products across two datasets:
 commercelens match-records examples/products_a.csv examples/products_b.csv --threshold 0.72 --out matches.json
 ```
 
+Build product identity clusters across a single dataset:
+
+```bash
+commercelens identity-graph examples/products_a.csv --threshold 0.72 --out identity.json
+```
+
 Show price history for a product key:
 
 ```bash
@@ -572,6 +578,14 @@ curl -X POST http://127.0.0.1:8000/v1/match/products \
     "right": [{"name": "Nike Air Max 90 Shoes", "brand": "Nike", "amount": 125, "currency": "USD"}],
     "threshold": 0.72
   }'
+```
+
+Build product identity clusters:
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/identity/graph \
+  -H "Content-Type: application/json" \
+  -d '{"records":[{"name":"Nike Air Max 90","brand":"Nike"},{"name":"Nike Air Max 90 Shoes","brand":"Nike"}]}'
 ```
 
 Run alert monitoring from a file path:
