@@ -1,0 +1,12 @@
+{
+  "kind": "product",
+  "source_url": "https://shop.example.com/products/benchmark-widget",
+  "fields": {
+    "product.name": "Benchmark Widget",
+    "product.brand": "Acme",
+    "product.sku": "BW-100",
+    "product.price.amount": 49.99,
+    "product.price.currency": "USD",
+    "product.availability": "in_stock"
+  }
+}

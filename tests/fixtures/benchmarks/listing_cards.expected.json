@@ -1,0 +1,11 @@
+{
+  "kind": "listing",
+  "source_url": "https://shop.example.com/collections/widgets",
+  "fields": {
+    "product_count": 2,
+    "products.0.name": "Widget A",
+    "products.0.image_url": "https://cdn.example.com/a.jpg",
+    "products.1.name": "Widget B",
+    "products.1.image_url": "https://cdn.example.com/b.jpg"
+  }
+}

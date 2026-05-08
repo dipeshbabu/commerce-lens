@@ -612,6 +612,12 @@ To test product matching:
 commercelens match-records examples/products_a.csv examples/products_b.csv --threshold 0.72
 ```
 
+To run local extraction quality fixtures:
+
+```bash
+commercelens benchmark-fixtures
+```
+
 To test hosted jobs and usage locally with SQLite:
 
 ```bash
