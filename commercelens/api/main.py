@@ -31,6 +31,7 @@ from commercelens.jobs.worker import MonitoringWorker, run_job_now
 from commercelens.matching.products import ProductMatchResult, match_products
 from commercelens.schemas.alerts import RunMonitorConfigFileRequest, RunMonitorConfigRequest
 from commercelens.schemas.connectors import MatchProductsRequest, NormalizeRecordsRequest
+from commercelens.schemas.dashboard import DashboardSummary
 from commercelens.schemas.listing import CatalogCrawlRequest, ListingExtractionRequest, ListingExtractionResult
 from commercelens.schemas.monitor import MonitorBatchRequest, MonitorProductRequest, PriceHistoryRequest
 from commercelens.schemas.product import ProductExtractionRequest, ProductExtractionResult
@@ -657,6 +658,59 @@ def billing_usage_endpoint(key: ApiKeyRecord | None = Depends(require_api_key)) 
     require_scope(key, "usage:read")
     decisions = [quota_decision(key, metric, 0) for metric in UsageMetric]
     return BillingUsageSnapshot(account_id=key.account_id, project_id=key.project_id, api_key_id=key.id, billing_plan=key.billing_plan, period_start=decisions[0].period_start, period_end=decisions[0].period_end, blocked=any(not decision.allowed for decision in decisions), items=[BillingUsageItem(metric=decision.metric, used=decision.used, limit=decision.limit, remaining=decision.remaining) for decision in decisions])
+
+
+@app.get("/v1/dashboard/summary", response_model=DashboardSummary)
+def dashboard_summary_endpoint(
+    limit: int = 25,
+    store: JobStore = Depends(get_job_store),
+    key: ApiKeyRecord | None = Depends(require_api_key),
+) -> DashboardSummary:
+    if key is None:
+        raise HTTPException(status_code=400, detail="Dashboard summary requires API key auth. Set COMMERCELENS_REQUIRE_API_KEY=true.")
+    require_scope(key, "usage:read")
+    account_id = key.account_id
+    project_id = key.project_id
+    jobs = store.list_jobs(limit=limit, account_id=account_id, project_id=project_id)
+    runs = store.list_runs(limit=limit, account_id=account_id, project_id=project_id)
+    extractions = store.list_extractions(limit=limit, account_id=account_id, project_id=project_id)
+    usage = store.usage_summary(account_id=account_id, project_id=project_id)
+    decisions = [quota_decision(key, metric, 0) for metric in UsageMetric]
+    billing = BillingUsageSnapshot(
+        account_id=key.account_id,
+        project_id=key.project_id,
+        api_key_id=key.id,
+        billing_plan=key.billing_plan,
+        period_start=decisions[0].period_start,
+        period_end=decisions[0].period_end,
+        blocked=any(not decision.allowed for decision in decisions),
+        items=[
+            BillingUsageItem(
+                metric=decision.metric,
+                used=decision.used,
+                limit=decision.limit,
+                remaining=decision.remaining,
+            )
+            for decision in decisions
+        ],
+    )
+    return DashboardSummary(
+        account_id=account_id,
+        project_id=project_id,
+        counts={
+            "jobs": len(jobs),
+            "active_jobs": sum(1 for job in jobs if job.status == JobStatus.active),
+            "runs": len(runs),
+            "failed_runs": sum(1 for run in runs if run.status.value == "failed"),
+            "extractions": len(extractions),
+            "failed_extractions": sum(1 for record in extractions if record.status == ExtractionStatus.failed),
+        },
+        billing=billing,
+        usage=usage,
+        jobs=jobs,
+        runs=runs,
+        extractions=extractions,
+    )
 
 
 @app.post("/v1/billing/stripe/webhook")

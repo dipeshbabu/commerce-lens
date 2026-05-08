@@ -554,6 +554,13 @@ curl http://127.0.0.1:8000/v1/usage/events?limit=20 \
   -H "X-API-Key: cl_REPLACE_WITH_TOKEN"
 ```
 
+Fetch a customer dashboard summary:
+
+```bash
+curl http://127.0.0.1:8000/v1/dashboard/summary \
+  -H "X-API-Key: cl_REPLACE_WITH_TOKEN"
+```
+
 Match product records:
 
 ```bash

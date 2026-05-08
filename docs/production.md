@@ -58,6 +58,13 @@ confidence, source URL, payload, and error details. It is intended for internal
 operators, not customer self-service. Put it behind VPN, SSO, or an
 authenticated edge before using it in production.
 
+## Customer Dashboard API
+
+Use `/v1/dashboard/summary` with a tenant API key to power a customer-facing
+portal. The response is scoped to the key's account/project and includes counts,
+billing quota state, usage totals, recent jobs, recent runs, and recent
+extractions.
+
 ## API Service
 
 ```bash
