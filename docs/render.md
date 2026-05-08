@@ -62,6 +62,13 @@ COMMERCELENS_USER_AGENT=CommerceLens/0.9 (+mailto:ops@yourdomain.com)
 
 Replace `https://YOUR-API.onrender.com` and `$ADMIN_TOKEN`.
 
+After the database is provisioned, apply the hosted schema migrations from a
+shell with `COMMERCELENS_DATABASE_URL` set:
+
+```bash
+commercelens migrate-postgres
+```
+
 Run the automated smoke test:
 
 ```bash

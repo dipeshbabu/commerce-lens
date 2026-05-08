@@ -31,6 +31,7 @@ from commercelens.jobs.models import (
     UsageSummaryItem,
     utc_now_iso,
 )
+from commercelens.jobs.migrations import run_postgres_migrations
 from commercelens.jobs.store import duration_ms
 
 try:  # pragma: no cover - optional dependency path
@@ -55,30 +56,11 @@ class PostgresJobStore:
 
     def _ensure_schema(self) -> None:
         with self._connect() as conn:
-            conn.execute("""CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, payload JSONB NOT NULL, name TEXT NOT NULL, owner TEXT, billing_plan TEXT NOT NULL, status TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)""")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_accounts_status ON accounts(status)")
-            conn.execute("""CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, payload JSONB NOT NULL, name TEXT NOT NULL, slug TEXT, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)""")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_projects_account_id ON projects(account_id)")
-            conn.execute("""CREATE TABLE IF NOT EXISTS account_members (id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, payload JSONB NOT NULL, email TEXT NOT NULL, role TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)""")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_members_account_id ON account_members(account_id)")
-            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_members_account_email ON account_members(account_id, email)")
-            conn.execute("""CREATE TABLE IF NOT EXISTS monitoring_jobs (id TEXT PRIMARY KEY, payload JSONB NOT NULL, status TEXT NOT NULL, next_run_at TIMESTAMPTZ, updated_at TIMESTAMPTZ NOT NULL, account_id TEXT, project_id TEXT, owner TEXT)""")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_status_next_run ON monitoring_jobs(status, next_run_at)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_account_project ON monitoring_jobs(account_id, project_id)")
-            conn.execute("""CREATE TABLE IF NOT EXISTS job_runs (id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES monitoring_jobs(id) ON DELETE CASCADE, payload JSONB NOT NULL, status TEXT NOT NULL, started_at TIMESTAMPTZ, finished_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL, account_id TEXT, project_id TEXT, owner TEXT)""")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_job_id ON job_runs(job_id)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_status ON job_runs(status)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_account_project ON job_runs(account_id, project_id)")
-            conn.execute("""CREATE TABLE IF NOT EXISTS api_keys (id TEXT PRIMARY KEY, payload JSONB NOT NULL, token_hash TEXT NOT NULL UNIQUE, token_prefix TEXT NOT NULL, disabled BOOLEAN NOT NULL DEFAULT FALSE, created_at TIMESTAMPTZ NOT NULL, account_id TEXT, project_id TEXT, owner TEXT)""")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_api_keys_account_project ON api_keys(account_id, project_id)")
-            conn.execute("""CREATE TABLE IF NOT EXISTS usage_events (id TEXT PRIMARY KEY, metric TEXT NOT NULL, quantity INTEGER NOT NULL, payload JSONB NOT NULL, account_id TEXT, project_id TEXT, owner TEXT, api_key_id TEXT, job_id TEXT, run_id TEXT, route TEXT, status_code INTEGER, created_at TIMESTAMPTZ NOT NULL)""")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_usage_created_at ON usage_events(created_at)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_usage_metric ON usage_events(metric)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_usage_account_project ON usage_events(account_id, project_id)")
-            conn.execute("""CREATE TABLE IF NOT EXISTS extraction_records (id TEXT PRIMARY KEY, payload JSONB NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, url TEXT, account_id TEXT, project_id TEXT, owner TEXT, api_key_id TEXT, confidence DOUBLE PRECISION, product_count INTEGER, created_at TIMESTAMPTZ NOT NULL)""")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_extractions_created_at ON extraction_records(created_at)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_extractions_account_project ON extraction_records(account_id, project_id)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_extractions_kind_status ON extraction_records(kind, status)")
+            run_postgres_migrations(conn)
+
+    def migrate(self) -> list[str]:
+        with self._connect() as conn:
+            return run_postgres_migrations(conn)
 
     def create_account(self, request: AccountCreate) -> AccountRecord:
         account = AccountRecord(**request.model_dump())

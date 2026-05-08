@@ -66,6 +66,21 @@ uvicorn commercelens.api.main:app --host 0.0.0.0 --port "$PORT"
 
 Run at least two API instances behind a load balancer for paid customers.
 
+## Database Migrations
+
+Production Postgres schema changes are tracked in
+`commercelens_schema_migrations`. Apply migrations before starting a new API or
+worker release:
+
+```bash
+commercelens migrate-postgres
+```
+
+The command reads `COMMERCELENS_DATABASE_URL` first, then `DATABASE_URL`. The
+hosted store also runs unapplied migrations at startup for small deployments,
+but release pipelines should run the migration command explicitly so schema
+changes are visible and auditable.
+
 ## Render Blueprint
 
 For the first hosted deployment, use the checked-in `render.yaml` Blueprint. It

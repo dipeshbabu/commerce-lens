@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Literal
 
@@ -17,6 +18,7 @@ from commercelens.core.monitor import monitor_product, monitor_products
 from commercelens.extractors.listing import extract_listing, extract_listing_from_html
 from commercelens.extractors.product import extract_product, extract_product_from_html
 from commercelens.jobs.billing import MONTHLY_PLAN_LIMITS
+from commercelens.jobs.migrations import migrate_postgres_dsn
 from commercelens.jobs.models import ApiKeyCreate, BillingPlan, BillingUsageItem, BillingUsageSnapshot, JobStatus, MonitoringJobCreate, MonitoringJobUpdate, ScheduleKind, UsageMetric
 from commercelens.jobs.store import JobStore
 from commercelens.jobs.worker import MonitoringWorker, run_job_now
@@ -223,6 +225,25 @@ def billing_usage(token: str = typer.Option(..., "--token", envvar="COMMERCELENS
     decisions = [quota_decision(key, metric, 0) for metric in UsageMetric]
     snapshot = BillingUsageSnapshot(account_id=key.account_id, project_id=key.project_id, api_key_id=key.id, billing_plan=key.billing_plan, period_start=decisions[0].period_start, period_end=decisions[0].period_end, blocked=any(not decision.allowed for decision in decisions), items=[BillingUsageItem(metric=decision.metric, used=decision.used, limit=decision.limit, remaining=decision.remaining) for decision in decisions])
     _write_or_print(snapshot.model_dump(mode="json", exclude_none=True), out=out)
+
+
+@app.command("migrate-postgres")
+def migrate_postgres(
+    dsn: str | None = typer.Option(
+        None,
+        "--dsn",
+        envvar="COMMERCELENS_DATABASE_URL",
+        help="Postgres DSN. Defaults to COMMERCELENS_DATABASE_URL or DATABASE_URL.",
+    ),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+) -> None:
+    """Apply explicit hosted Postgres schema migrations."""
+    dsn = dsn or os.getenv("DATABASE_URL")
+    if not dsn:
+        raise typer.BadParameter("Set --dsn, COMMERCELENS_DATABASE_URL, or DATABASE_URL.")
+    applied = migrate_postgres_dsn(dsn)
+    payload = {"applied": applied, "count": len(applied)}
+    _write_or_print(payload, out=out)
 
 
 @app.command("usage-events")
