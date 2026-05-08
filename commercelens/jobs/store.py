@@ -452,6 +452,75 @@ class JobStore:
             rows = conn.execute("SELECT payload FROM monitoring_jobs WHERE status = ? AND next_run_at IS NOT NULL AND next_run_at <= ? ORDER BY next_run_at ASC LIMIT ?", (JobStatus.active.value, now_iso, limit)).fetchall()
         return [MonitoringJob.model_validate_json(row["payload"]) for row in rows]
 
+    def claim_due_job_runs(
+        self,
+        now_iso: str | None = None,
+        limit: int = 50,
+    ) -> list[tuple[MonitoringJob, JobRun]]:
+        now_iso = now_iso or utc_now_iso()
+        claims: list[tuple[MonitoringJob, JobRun]] = []
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            rows = conn.execute(
+                """
+                SELECT payload FROM monitoring_jobs
+                WHERE status = ? AND next_run_at IS NOT NULL AND next_run_at <= ?
+                ORDER BY next_run_at ASC
+                LIMIT ?
+                """,
+                (JobStatus.active.value, now_iso, limit),
+            ).fetchall()
+            for row in rows:
+                job = MonitoringJob.model_validate_json(row["payload"])
+                run = JobRun(
+                    job_id=job.id,
+                    status=RunStatus.running,
+                    started_at=utc_now_iso(),
+                    account_id=job.account_id,
+                    project_id=job.project_id,
+                    owner=job.owner,
+                )
+                job.last_run_at = run.started_at
+                job.next_run_at = None
+                job.updated_at = utc_now_iso()
+                conn.execute(
+                    """
+                    INSERT INTO job_runs (id, job_id, payload, status, started_at, finished_at, created_at, account_id, project_id, owner)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        run.id,
+                        run.job_id,
+                        run.model_dump_json(exclude_none=True),
+                        run.status.value,
+                        run.started_at,
+                        run.finished_at,
+                        run.created_at,
+                        run.account_id,
+                        run.project_id,
+                        run.owner,
+                    ),
+                )
+                conn.execute(
+                    """
+                    UPDATE monitoring_jobs
+                    SET payload = ?, status = ?, next_run_at = ?, updated_at = ?, account_id = ?, project_id = ?, owner = ?
+                    WHERE id = ? AND next_run_at IS NOT NULL
+                    """,
+                    (
+                        job.model_dump_json(exclude_none=True),
+                        job.status.value,
+                        job.next_run_at,
+                        job.updated_at,
+                        job.account_id,
+                        job.project_id,
+                        job.owner,
+                        job.id,
+                    ),
+                )
+                claims.append((job, run))
+        return claims
+
     def mark_job_run_started(self, job: MonitoringJob) -> JobRun:
         run = JobRun(job_id=job.id, status=RunStatus.running, started_at=utc_now_iso(), account_id=job.account_id, project_id=job.project_id, owner=job.owner)
         self.save_run(run)

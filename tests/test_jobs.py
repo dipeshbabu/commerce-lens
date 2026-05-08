@@ -45,6 +45,24 @@ def test_manual_job_has_no_next_run(tmp_path: Path) -> None:
     assert store.due_jobs() == []
 
 
+def test_claim_due_job_runs_prevents_duplicate_claims(tmp_path: Path) -> None:
+    store = JobStore(tmp_path / "jobs.db")
+    job = store.create_job(MonitoringJobCreate(name="watch example", config=sample_config(), interval_minutes=5))
+    job.next_run_at = "2000-01-01T00:00:00+00:00"
+    store.save_job(job)
+
+    first_claims = store.claim_due_job_runs(limit=10)
+    second_claims = store.claim_due_job_runs(limit=10)
+
+    assert len(first_claims) == 1
+    claimed_job, run = first_claims[0]
+    assert claimed_job.id == job.id
+    assert run.job_id == job.id
+    assert store.get_job(job.id).next_run_at is None  # type: ignore[union-attr]
+    assert store.get_run(run.id) is not None
+    assert second_claims == []
+
+
 def test_api_key_roundtrip(tmp_path: Path) -> None:
     store = JobStore(tmp_path / "jobs.db")
     result = store.create_api_key(ApiKeyCreate(name="local dev"))

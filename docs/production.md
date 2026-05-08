@@ -98,8 +98,11 @@ See `docs/render.md` for the full deploy and smoke-test flow.
 commercelens worker --poll-seconds 60 --limit 25
 ```
 
-Start with one worker. Add workers only after adding a queue or distributed job
-claiming so two workers cannot execute the same due job at the same time.
+Workers claim due jobs and create run records in one store transaction before
+executing them. In Postgres deployments, the claim query uses row locks with
+`FOR UPDATE SKIP LOCKED`, so multiple workers can poll without executing the
+same due job. Start with one worker, then scale horizontally after domain
+concurrency controls and queue-depth alerts are configured.
 
 ## Deployment Checklist
 
@@ -133,7 +136,8 @@ Before selling to companies, the hosted service should support:
 
 ## Next Infrastructure Step
 
-The current worker uses polling. For higher-volume customers, add a queue layer:
+The current worker still uses polling with distributed claiming. For
+higher-volume customers, add a queue layer:
 
 - Redis + RQ/Celery/Arq for self-managed deployments
 - SQS, Cloud Tasks, or a managed queue for cloud deployments

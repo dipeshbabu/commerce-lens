@@ -15,11 +15,10 @@ class MonitoringWorker:
 
     def tick(self, limit: int = 25, dry_run: bool = False, deliver: bool = True) -> WorkerTickResult:
         result = WorkerTickResult()
-        due_jobs = self.store.due_jobs(limit=limit)
-        result.due_jobs = len(due_jobs)
+        claimed_runs = self.store.claim_due_job_runs(limit=limit)
+        result.due_jobs = len(claimed_runs)
 
-        for job in due_jobs:
-            run = self.store.mark_job_run_started(job)
+        for job, run in claimed_runs:
             result.started_runs += 1
             result.run_ids.append(run.id)
             try:
