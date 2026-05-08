@@ -25,6 +25,7 @@ from commercelens.core.monitor import BatchMonitorResult, MonitorResult, monitor
 from commercelens.core.renderer import RenderError
 from commercelens.extractors.listing import extract_listing, extract_listing_from_html
 from commercelens.extractors.product import extract_product, extract_product_from_html
+from commercelens.intelligence.price_summary import PriceIntelligenceSummary, summarize_prices
 from commercelens.jobs.models import AccountCreate, AccountRecord, ApiKeyCreate, ApiKeyCreateResult, ApiKeyRecord, BillingUsageItem, BillingUsageSnapshot, ExtractionCreate, ExtractionKind, ExtractionRecord, ExtractionStatus, JobRun, JobStatus, MemberCreate, MemberRecord, MonitoringJob, MonitoringJobCreate, MonitoringJobUpdate, ProjectCreate, ProjectRecord, UsageEvent, UsageMetric, UsageSummary, WorkerTickResult
 from commercelens.jobs.store import JobStore
 from commercelens.jobs.worker import MonitoringWorker, run_job_now
@@ -36,6 +37,7 @@ from commercelens.schemas.connectors import (
     MatchProductsRequest,
     CatalogDiffRequest,
     NormalizeRecordsRequest,
+    PriceSummaryRequest,
     ProductIdentityGraphRequest,
 )
 from commercelens.schemas.dashboard import DashboardSummary
@@ -793,3 +795,21 @@ def catalog_diff_endpoint(
         },
     )
     return result
+
+
+@app.post("/v1/intelligence/price-summary", response_model=PriceIntelligenceSummary)
+def price_summary_endpoint(
+    request: PriceSummaryRequest,
+    store: JobStore = Depends(get_job_store),
+    key: ApiKeyRecord | None = Depends(require_api_key),
+) -> PriceIntelligenceSummary:
+    _meter(key, UsageMetric.match_request, scope="match:write")
+    summary = summarize_prices(request.records)
+    _record_usage(
+        store,
+        key,
+        UsageMetric.match_request,
+        route="/v1/intelligence/price-summary",
+        metadata={"records": len(request.records), "priced": summary.priced_count},
+    )
+    return summary

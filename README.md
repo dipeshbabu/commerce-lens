@@ -402,6 +402,12 @@ Diff two catalog exports:
 commercelens catalog-diff before.csv after.csv --out catalog_changes.json
 ```
 
+Summarize competitive price distribution:
+
+```bash
+commercelens price-summary examples/products_a.csv --out price_summary.json
+```
+
 Show price history for a product key:
 
 ```bash
@@ -600,6 +606,14 @@ Diff two catalogs:
 curl -X POST http://127.0.0.1:8000/v1/catalog/diff \
   -H "Content-Type: application/json" \
   -d '{"before":[{"url":"https://shop.test/a","amount":10}],"after":[{"url":"https://shop.test/a","amount":8}]}'
+```
+
+Summarize competitive prices:
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/intelligence/price-summary \
+  -H "Content-Type: application/json" \
+  -d '{"records":[{"name":"A","amount":10,"currency":"USD"},{"name":"B","amount":20,"currency":"USD"}]}'
 ```
 
 Run alert monitoring from a file path:

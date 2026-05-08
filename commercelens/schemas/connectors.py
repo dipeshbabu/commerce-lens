@@ -22,5 +22,9 @@ class CatalogDiffRequest(BaseModel):
     after: list[ProductRecord] = Field(default_factory=list)
 
 
+class PriceSummaryRequest(BaseModel):
+    records: list[ProductRecord] = Field(default_factory=list)
+
+
 class NormalizeRecordsRequest(BaseModel):
     records: list[ProductRecord] = Field(default_factory=list)

@@ -22,6 +22,7 @@ from commercelens.jobs.migrations import migrate_postgres_dsn
 from commercelens.jobs.models import ApiKeyCreate, BillingPlan, BillingUsageItem, BillingUsageSnapshot, JobStatus, MonitoringJobCreate, MonitoringJobUpdate, ScheduleKind, UsageMetric
 from commercelens.jobs.store import JobStore
 from commercelens.jobs.worker import MonitoringWorker, run_job_now
+from commercelens.intelligence.price_summary import summarize_prices
 from commercelens.matching.catalog_diff import diff_catalogs
 from commercelens.matching.identity import build_identity_graph
 from commercelens.matching.products import match_products
@@ -341,6 +342,20 @@ def catalog_diff(
     warnings = before_result.warnings + after_result.warnings
     if warnings:
         payload["warnings"] = warnings
+    _write_or_print(payload, out=out)
+
+
+@app.command("price-summary")
+def price_summary(
+    records: Path = typer.Argument(...),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+) -> None:
+    """Summarize competitive price and availability distribution for a product dataset."""
+    load_result = load_product_records(records)
+    summary = summarize_prices(load_result.records)
+    payload = summary.model_dump(mode="json", exclude_none=True)
+    if load_result.warnings:
+        payload["warnings"] = summary.warnings + load_result.warnings
     _write_or_print(payload, out=out)
 
 
