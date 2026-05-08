@@ -248,6 +248,7 @@ class ApiKeyCreate(BaseModel):
     scopes: list[str] = Field(default_factory=lambda: ["extract:write", "extractions:read", "jobs:read", "jobs:write", "runs:read", "usage:read"])
     billing_plan: BillingPlan = BillingPlan.free
     monthly_quota_overrides: dict[UsageMetric, int] = Field(default_factory=dict)
+    monthly_domain_quotas: dict[str, int] = Field(default_factory=dict)
 
 
 class ApiKeyRecord(BaseModel):
@@ -261,6 +262,7 @@ class ApiKeyRecord(BaseModel):
     scopes: list[str] = Field(default_factory=list)
     billing_plan: BillingPlan = BillingPlan.free
     monthly_quota_overrides: dict[UsageMetric, int] = Field(default_factory=dict)
+    monthly_domain_quotas: dict[str, int] = Field(default_factory=dict)
     created_at: str = Field(default_factory=utc_now_iso)
     last_used_at: str | None = None
     disabled: bool = False

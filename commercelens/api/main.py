@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from collections import Counter
 from html import escape
 from typing import Sequence
 from urllib.parse import urlencode
@@ -10,6 +11,7 @@ from fastapi.responses import HTMLResponse
 
 from commercelens.alerts.runner import MonitorRunResult, run_monitor_config, run_monitor_config_file
 from commercelens.api.auth import get_job_store, require_admin_access, require_admin_token, require_api_key
+from commercelens.api.domain_limits import require_domain_quota, url_domain
 from commercelens.api.quota import quota_decision, require_quota, require_scope
 from commercelens.connectors.datasets import DatasetLoadResult
 from commercelens.core.crawler import CatalogCrawlResult, crawl_catalog
@@ -395,14 +397,15 @@ def extraction_dashboard(extraction_id: str, request: Request, store: JobStore =
 
 @app.post("/v1/extract/product", response_model=ProductExtractionResult)
 def extract_product_endpoint(request: ProductExtractionRequest, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> ProductExtractionResult:
+    url = str(request.url) if request.url else None
     _meter(key, UsageMetric.product_extract, scope="extract:write")
+    domain = require_domain_quota(store, key, url)
     if not request.url and not request.html:
         _record_extraction(store, key, ExtractionKind.product, ExtractionStatus.failed, error="Provide either 'url' or 'html'.")
         raise HTTPException(status_code=400, detail="Provide either 'url' or 'html'.")
     if request.llm_fallback:
         _record_extraction(store, key, ExtractionKind.product, ExtractionStatus.failed, url=str(request.url) if request.url else None, error="LLM fallback is planned for a later phase.")
         raise HTTPException(status_code=501, detail="LLM fallback is planned for a later phase. Use llm_fallback=false for now.")
-    url = str(request.url) if request.url else None
     try:
         if request.render:
             if not url:
@@ -414,8 +417,8 @@ def extract_product_endpoint(request: ProductExtractionRequest, store: JobStore 
             assert html is not None
             result = extract_product_from_html(html, url=url)
         payload = result.model_dump(mode="json", exclude_none=True)
-        _record_extraction(store, key, ExtractionKind.product, ExtractionStatus.succeeded, url=result.url or url, confidence=result.confidence, payload=payload, metadata={"render": request.render})
-        _record_usage(store, key, UsageMetric.product_extract, route="/v1/extract/product", metadata={"render": request.render})
+        _record_extraction(store, key, ExtractionKind.product, ExtractionStatus.succeeded, url=result.url or url, confidence=result.confidence, payload=payload, metadata={"render": request.render, "domain": domain})
+        _record_usage(store, key, UsageMetric.product_extract, route="/v1/extract/product", metadata={"render": request.render, "domain": domain})
         return result
     except FetchError as exc:
         _record_extraction(store, key, ExtractionKind.product, ExtractionStatus.failed, url=url, error=str(exc), metadata={"render": request.render})
@@ -427,11 +430,12 @@ def extract_product_endpoint(request: ProductExtractionRequest, store: JobStore 
 
 @app.post("/v1/extract/listing", response_model=ListingExtractionResult)
 def extract_listing_endpoint(request: ListingExtractionRequest, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> ListingExtractionResult:
+    url = str(request.url) if request.url else None
     _meter(key, UsageMetric.listing_extract, scope="extract:write")
+    domain = require_domain_quota(store, key, url)
     if not request.url and not request.html:
         _record_extraction(store, key, ExtractionKind.listing, ExtractionStatus.failed, error="Provide either 'url' or 'html'.")
         raise HTTPException(status_code=400, detail="Provide either 'url' or 'html'.")
-    url = str(request.url) if request.url else None
     try:
         if request.render:
             if not url:
@@ -443,8 +447,8 @@ def extract_listing_endpoint(request: ListingExtractionRequest, store: JobStore 
             assert html is not None
             result = extract_listing_from_html(html, url=url)
         payload = result.model_dump(mode="json", exclude_none=True)
-        _record_extraction(store, key, ExtractionKind.listing, ExtractionStatus.succeeded, url=result.url or url, confidence=result.confidence, product_count=result.product_count, payload=payload, metadata={"render": request.render})
-        _record_usage(store, key, UsageMetric.listing_extract, route="/v1/extract/listing", metadata={"products": len(result.products), "render": request.render})
+        _record_extraction(store, key, ExtractionKind.listing, ExtractionStatus.succeeded, url=result.url or url, confidence=result.confidence, product_count=result.product_count, payload=payload, metadata={"render": request.render, "domain": domain})
+        _record_usage(store, key, UsageMetric.listing_extract, route="/v1/extract/listing", metadata={"products": len(result.products), "render": request.render, "domain": domain})
         return result
     except FetchError as exc:
         _record_extraction(store, key, ExtractionKind.listing, ExtractionStatus.failed, url=url, error=str(exc), metadata={"render": request.render})
@@ -492,9 +496,10 @@ def get_extraction_endpoint(
 @app.post("/v1/crawl/catalog", response_model=CatalogCrawlResult)
 def crawl_catalog_endpoint(request: CatalogCrawlRequest, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> CatalogCrawlResult:
     _meter(key, UsageMetric.catalog_crawl, scope="crawl:write")
+    domain = require_domain_quota(store, key, str(request.url))
     try:
         result = crawl_catalog(start_url=str(request.url), max_pages=request.max_pages, follow_next_pages=request.follow_next_pages, render=request.render, debug_dir=request.debug_dir)
-        _record_usage(store, key, UsageMetric.catalog_crawl, route="/v1/crawl/catalog", metadata={"pages": result.pages_crawled, "products": len(result.products)})
+        _record_usage(store, key, UsageMetric.catalog_crawl, route="/v1/crawl/catalog", metadata={"pages": result.pages_crawled, "products": len(result.products), "domain": domain})
         return result
     except FetchError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -505,9 +510,10 @@ def crawl_catalog_endpoint(request: CatalogCrawlRequest, store: JobStore = Depen
 @app.post("/v1/monitor/product", response_model=MonitorResult)
 def monitor_product_endpoint(request: MonitorProductRequest, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> MonitorResult:
     _meter(key, UsageMetric.monitor_run, scope="monitor:write")
+    domain = require_domain_quota(store, key, str(request.url))
     try:
         result = monitor_product(str(request.url), db_path=request.db_path, render=request.render)
-        _record_usage(store, key, UsageMetric.monitor_run, route="/v1/monitor/product", metadata={"render": request.render, "changed": result.has_change})
+        _record_usage(store, key, UsageMetric.monitor_run, route="/v1/monitor/product", metadata={"render": request.render, "changed": result.has_change, "domain": domain})
         return result
     except FetchError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -518,8 +524,13 @@ def monitor_product_endpoint(request: MonitorProductRequest, store: JobStore = D
 @app.post("/v1/monitor/batch", response_model=BatchMonitorResult)
 def monitor_batch_endpoint(request: MonitorBatchRequest, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> BatchMonitorResult:
     _meter(key, UsageMetric.monitor_run, quantity=max(1, len(request.urls)), scope="monitor:write")
+    domain_counts = Counter(url_domain(str(url)) for url in request.urls)
+    for domain, count in domain_counts.items():
+        if domain:
+            require_domain_quota(store, key, f"https://{domain}", quantity=count)
     result = monitor_products([str(url) for url in request.urls], db_path=request.db_path, render=request.render)
-    _record_usage(store, key, UsageMetric.monitor_run, quantity=max(1, len(request.urls)), route="/v1/monitor/batch", metadata={"urls": len(request.urls)})
+    for domain, count in domain_counts.items():
+        _record_usage(store, key, UsageMetric.monitor_run, quantity=count, route="/v1/monitor/batch", metadata={"urls": len(request.urls), "domain": domain})
     return result
 
 

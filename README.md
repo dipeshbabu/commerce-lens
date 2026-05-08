@@ -55,6 +55,7 @@ CommerceLens is currently in early v0.9 commercial product development. The curr
 - Optional API key authentication for hosted deployments
 - Tenant context through account_id, project_id, owner, and api_key_id
 - Usage event logging and usage summaries
+- API-key monthly domain quotas
 - SQLite or Postgres job/run/API-key/usage store
 - Docker and docker-compose deployment files
 - Python SDK
@@ -348,6 +349,17 @@ Create an API key for hosted deployments:
 
 ```bash
 commercelens create-api-key --name "local dev" --account-id acct_demo --project-id proj_default
+```
+
+Create a key with monthly domain budgets:
+
+```bash
+commercelens create-api-key \
+  --name "domain-limited" \
+  --account-id acct_demo \
+  --project-id proj_default \
+  --domain-quota example.com=5000 \
+  --domain-quota "*=250"
 ```
 
 Summarize usage:

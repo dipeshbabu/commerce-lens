@@ -3,6 +3,8 @@ from fastapi.testclient import TestClient
 from commercelens.api.main import app
 from commercelens.core.crawler import CatalogCrawlResult
 from commercelens.core.monitor import MonitorResult
+from commercelens.jobs.models import ApiKeyCreate
+from commercelens.jobs.store import JobStore
 from commercelens.schemas.listing import ListingProduct
 from commercelens.storage.price_store import ProductSnapshot
 
@@ -53,6 +55,27 @@ def test_catalog_crawl_endpoint_records_usage_with_pages_crawled(monkeypatch, tm
 
     assert response.status_code == 200
     assert response.json()["pages_crawled"] == 2
+
+
+def test_product_extract_blocks_domain_quota(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("COMMERCELENS_REQUIRE_API_KEY", "true")
+    monkeypatch.setenv("COMMERCELENS_JOBS_DB", str(tmp_path / "jobs.db"))
+    key = JobStore(tmp_path / "jobs.db").create_api_key(
+        ApiKeyCreate(name="limited", scopes=["*"], monthly_domain_quotas={"example.com": 0})
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/extract/product",
+        headers={"X-API-Key": key.token},
+        json={
+            "url": "https://example.com/products/widget",
+            "html": "<html></html>",
+        },
+    )
+
+    assert response.status_code == 429
+    assert response.json()["detail"]["error"] == "monthly_domain_quota_exceeded"
 
 
 def test_monitor_endpoint_records_usage_with_has_change(monkeypatch, tmp_path) -> None:

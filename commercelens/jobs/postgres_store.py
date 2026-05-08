@@ -374,7 +374,7 @@ class PostgresJobStore:
 
     def create_api_key(self, request: ApiKeyCreate) -> ApiKeyCreateResult:
         token = f"cl_{secrets.token_urlsafe(32)}"
-        key = ApiKeyRecord(name=request.name, owner=request.owner, account_id=request.account_id, project_id=request.project_id, scopes=request.scopes, billing_plan=request.billing_plan, monthly_quota_overrides=request.monthly_quota_overrides, token_hash=hashlib.sha256(token.encode("utf-8")).hexdigest(), token_prefix=token[:10])
+        key = ApiKeyRecord(name=request.name, owner=request.owner, account_id=request.account_id, project_id=request.project_id, scopes=request.scopes, billing_plan=request.billing_plan, monthly_quota_overrides=request.monthly_quota_overrides, monthly_domain_quotas=request.monthly_domain_quotas, token_hash=hashlib.sha256(token.encode("utf-8")).hexdigest(), token_prefix=token[:10])
         with self._connect() as conn:
             conn.execute("""INSERT INTO api_keys (id, payload, token_hash, token_prefix, disabled, created_at, account_id, project_id, owner) VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s)""", (key.id, key.model_dump_json(exclude_none=True), key.token_hash, key.token_prefix, False, key.created_at, key.account_id, key.project_id, key.owner))
         return ApiKeyCreateResult(key=key, token=token)

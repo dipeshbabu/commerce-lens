@@ -197,7 +197,7 @@ def list_runs(jobs_db: Path | None = typer.Option(None, "--jobs-db"), job_id: st
 
 
 @app.command("create-api-key")
-def create_api_key(name: str = typer.Option(..., "--name"), jobs_db: Path | None = typer.Option(None, "--jobs-db"), owner: str | None = typer.Option(None, "--owner"), account_id: str | None = typer.Option(None, "--account-id"), project_id: str | None = typer.Option(None, "--project-id"), billing_plan: BillingPlan = typer.Option(BillingPlan.free, "--billing-plan"), scopes: list[str] | None = typer.Option(None, "--scope"), quota: list[str] | None = typer.Option(None, "--quota", help="Override monthly quota as metric=limit. Example: --quota product_extract=10000"), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+def create_api_key(name: str = typer.Option(..., "--name"), jobs_db: Path | None = typer.Option(None, "--jobs-db"), owner: str | None = typer.Option(None, "--owner"), account_id: str | None = typer.Option(None, "--account-id"), project_id: str | None = typer.Option(None, "--project-id"), billing_plan: BillingPlan = typer.Option(BillingPlan.free, "--billing-plan"), scopes: list[str] | None = typer.Option(None, "--scope"), quota: list[str] | None = typer.Option(None, "--quota", help="Override monthly quota as metric=limit. Example: --quota product_extract=10000"), domain_quota: list[str] | None = typer.Option(None, "--domain-quota", help="Set monthly domain quota as domain=limit. Use *=limit as a default."), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
     """Create an API key for hosted deployments."""
     overrides: dict[UsageMetric, int] = {}
     for item in quota or []:
@@ -205,7 +205,13 @@ def create_api_key(name: str = typer.Option(..., "--name"), jobs_db: Path | None
             raise typer.BadParameter("Quota overrides must use metric=limit format.")
         metric_name, raw_limit = item.split("=", 1)
         overrides[UsageMetric(metric_name)] = int(raw_limit)
-    result = _job_store(jobs_db).create_api_key(ApiKeyCreate(name=name, owner=owner, account_id=account_id, project_id=project_id, scopes=scopes or ["*"], billing_plan=billing_plan, monthly_quota_overrides=overrides))
+    domain_overrides: dict[str, int] = {}
+    for item in domain_quota or []:
+        if "=" not in item:
+            raise typer.BadParameter("Domain quota overrides must use domain=limit format.")
+        domain, raw_limit = item.split("=", 1)
+        domain_overrides[domain.lower()] = int(raw_limit)
+    result = _job_store(jobs_db).create_api_key(ApiKeyCreate(name=name, owner=owner, account_id=account_id, project_id=project_id, scopes=scopes or ["*"], billing_plan=billing_plan, monthly_quota_overrides=overrides, monthly_domain_quotas=domain_overrides))
     _write_or_print(result.model_dump(mode="json", exclude_none=True), out=out)
 
 

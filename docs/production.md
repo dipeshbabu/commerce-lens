@@ -115,8 +115,28 @@ concurrency controls and queue-depth alerts are configured.
 - Error reporting is enabled for API and worker.
 - Rate limits exist at the edge for anonymous and authenticated traffic.
 - Outbound fetch volume is monitored by domain.
+- High-risk or expensive customer keys have monthly domain quotas.
 - SMTP/webhook secrets are stored in the platform secret manager.
 - Customer exports and debug snapshots are stored outside the repo.
+
+## Domain Budgets
+
+API keys can carry monthly per-domain quotas to keep one customer or one target
+domain from consuming the whole month of fetch capacity. Create a key with an
+exact domain limit or a default wildcard:
+
+```bash
+commercelens create-api-key \
+  --name "growth customer" \
+  --account-id acct_demo \
+  --project-id proj_default \
+  --domain-quota example.com=5000 \
+  --domain-quota "*=250"
+```
+
+Hosted extraction, crawl, and monitor routes reject requests with HTTP 429 when
+the monthly domain budget is exhausted. Usage events include a `domain` metadata
+field so operators can audit domain consumption.
 
 ## Sellable Product Baseline
 
