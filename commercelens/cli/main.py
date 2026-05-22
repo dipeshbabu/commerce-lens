@@ -15,6 +15,7 @@ from commercelens.api.quota import quota_decision
 from commercelens.connectors.datasets import load_product_records, records_from_snapshots, write_product_records
 from commercelens.core.crawler import crawl_catalog
 from commercelens.core.monitor import monitor_product, monitor_products
+from commercelens.demo import seed_demo_workspace_path
 from commercelens.extractors.listing import extract_listing, extract_listing_from_html
 from commercelens.extractors.product import extract_product, extract_product_from_html
 from commercelens.jobs.billing import MONTHLY_PLAN_LIMITS
@@ -268,6 +269,16 @@ def usage_summary(jobs_db: Path | None = typer.Option(None, "--jobs-db"), accoun
     """Summarize hosted usage by metric."""
     summary = _job_store(jobs_db).usage_summary(account_id=account_id, project_id=project_id, since=since, until=until)
     _write_or_print(summary.model_dump(mode="json", exclude_none=True), out=out)
+
+
+@app.command("seed-demo")
+def seed_demo(
+    jobs_db: Path = typer.Option(Path("commercelens_demo.db"), "--jobs-db"),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+) -> None:
+    """Seed a realistic customer workspace for portal and sales demos."""
+    result = seed_demo_workspace_path(jobs_db)
+    _write_or_print(result, out=out)
 
 
 @app.command()
