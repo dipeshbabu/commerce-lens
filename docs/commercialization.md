@@ -81,6 +81,15 @@ Prepare these before talking to larger companies:
 - Uptime/status page
 - Demo workspace with realistic product history
 
+Checked-in starter assets:
+
+- `docs/sales/one_page_brief.md`
+- `docs/sales/pricing.md`
+- `docs/sales/security_overview.md`
+- `docs/sales/data_retention.md`
+- `docs/sales/api_quickstart.md`
+- `docs/sales/demo_script.md`
+
 ## Product Moat
 
 The defensible part is extraction reliability, not API routing. Invest in:
