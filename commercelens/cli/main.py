@@ -27,7 +27,7 @@ from commercelens.intelligence.price_summary import summarize_prices
 from commercelens.matching.catalog_diff import diff_catalogs
 from commercelens.matching.identity import build_identity_graph
 from commercelens.matching.products import match_products
-from commercelens.quality.benchmarks import run_benchmark_suite
+from commercelens.quality.benchmarks import build_quality_report, run_benchmark_suite
 from commercelens.storage.exporters import write_csv, write_jsonl
 from commercelens.storage.price_store import PriceSnapshotStore
 
@@ -377,6 +377,18 @@ def benchmark_fixtures(
 ) -> None:
     """Run local extraction quality fixtures."""
     result = run_benchmark_suite(fixture_dir)
+    _write_or_print(result.model_dump(mode="json", exclude_none=True), out=out)
+    if not result.passed:
+        raise typer.Exit(code=1)
+
+
+@app.command("quality-report")
+def quality_report(
+    fixture_dir: Path = typer.Argument(Path("tests/fixtures/benchmarks")),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+) -> None:
+    """Build an extraction quality report from local benchmark fixtures."""
+    result = build_quality_report(fixture_dir)
     _write_or_print(result.model_dump(mode="json", exclude_none=True), out=out)
     if not result.passed:
         raise typer.Exit(code=1)
