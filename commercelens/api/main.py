@@ -522,7 +522,6 @@ def customer_portal(request: Request, store: JobStore = Depends(get_job_store)) 
     token_query = _portal_key_query(request)
     account_id = key.account_id
     project_id = key.project_id
-    jobs = store.list_jobs(limit=25, account_id=account_id, project_id=project_id)
     runs = store.list_runs(limit=25, account_id=account_id, project_id=project_id)
     extractions = store.list_extractions(limit=25, account_id=account_id, project_id=project_id)
     usage = store.usage_summary(account_id=account_id, project_id=project_id)
