@@ -40,7 +40,7 @@ from commercelens.schemas.connectors import (
     PriceSummaryRequest,
     ProductIdentityGraphRequest,
 )
-from commercelens.schemas.dashboard import DashboardSummary
+from commercelens.schemas.dashboard import DashboardSummary, MonitoredTargetSummary, MonitoringOverview
 from commercelens.schemas.listing import CatalogCrawlRequest, ListingExtractionRequest, ListingExtractionResult
 from commercelens.schemas.monitor import MonitorBatchRequest, MonitorProductRequest, PriceHistoryRequest
 from commercelens.schemas.product import ProductExtractionRequest, ProductExtractionResult
@@ -109,6 +109,25 @@ def _dashboard_token_query(request: Request) -> str:
     return "?" + urlencode({"admin_token": token}) if token else ""
 
 
+def _portal_key_query(request: Request) -> str:
+    token = request.query_params.get("api_key")
+    return "?" + urlencode({"api_key": token}) if token else ""
+
+
+def _require_portal_key(request: Request, store: JobStore) -> ApiKeyRecord:
+    token = request.headers.get("X-API-Key") or request.query_params.get("api_key")
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing api_key query parameter or X-API-Key header.")
+    key = store.verify_api_key(token)
+    if not key:
+        raise HTTPException(status_code=401, detail="Invalid API key.")
+    require_scope(key, "usage:read")
+    require_scope(key, "jobs:read")
+    require_scope(key, "runs:read")
+    require_scope(key, "extractions:read")
+    return key
+
+
 def _dashboard_shell(title: str, content: str, token_query: str = "") -> str:
     return f"""<!doctype html>
 <html lang="en">
@@ -146,6 +165,45 @@ def _dashboard_shell(title: str, content: str, token_query: str = "") -> str:
 </html>"""
 
 
+def _portal_shell(title: str, content: str, token_query: str = "") -> str:
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{_esc(title)} - CommerceLens</title>
+  <style>
+    body {{ margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; color: #18212f; background: #f7f8fa; }}
+    header {{ background: #0f172a; color: white; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }}
+    header a {{ color: #bfdbfe; text-decoration: none; margin-left: 16px; }}
+    main {{ max-width: 1200px; margin: 0 auto; padding: 24px; }}
+    h1 {{ font-size: 26px; margin: 0 0 18px; }}
+    h2 {{ font-size: 17px; margin: 26px 0 10px; }}
+    .grid {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }}
+    .metric {{ background: white; border: 1px solid #dfe4ea; border-radius: 8px; padding: 14px; }}
+    .metric strong {{ display: block; font-size: 24px; margin-top: 6px; }}
+    .panel {{ background: white; border: 1px solid #dfe4ea; border-radius: 8px; padding: 16px; margin-top: 16px; }}
+    table {{ width: 100%; border-collapse: collapse; background: white; border: 1px solid #dfe4ea; border-radius: 8px; overflow: hidden; }}
+    th, td {{ padding: 10px 12px; border-bottom: 1px solid #e6eaf0; text-align: left; vertical-align: top; font-size: 14px; }}
+    th {{ background: #f1f5f9; color: #475569; font-weight: 600; }}
+    tr:last-child td {{ border-bottom: 0; }}
+    code {{ background: #eef2ff; padding: 2px 5px; border-radius: 4px; }}
+    .muted {{ color: #64748b; }}
+    .danger {{ color: #b91c1c; }}
+    @media (max-width: 900px) {{ .grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} main {{ padding: 16px; }} }}
+    @media (max-width: 560px) {{ .grid {{ grid-template-columns: 1fr; }} th, td {{ font-size: 13px; }} }}
+  </style>
+</head>
+<body>
+  <header>
+    <div><strong>CommerceLens</strong> <span class="muted">customer portal</span></div>
+    <nav><a href="/portal{token_query}">Overview</a><a href="/docs">API Docs</a></nav>
+  </header>
+  <main>{content}</main>
+</body>
+</html>"""
+
+
 def _table(headers: list[str], rows: Sequence[Sequence[object]]) -> str:
     head = "".join(f"<th>{_esc(header)}</th>" for header in headers)
     if not rows:
@@ -155,6 +213,54 @@ def _table(headers: list[str], rows: Sequence[Sequence[object]]) -> str:
         for row in rows
     )
     return f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
+
+
+def _build_monitoring_overview(
+    store: JobStore,
+    key: ApiKeyRecord | None,
+    limit: int = 100,
+) -> MonitoringOverview:
+    account_id = key.account_id if key else None
+    project_id = key.project_id if key else None
+    jobs = store.list_jobs(limit=limit, account_id=account_id, project_id=project_id)
+    runs = store.list_runs(limit=limit, account_id=account_id, project_id=project_id)
+    targets: list[MonitoredTargetSummary] = []
+    rule_count = 0
+    render_count = 0
+    seen_urls: set[str] = set()
+    for job in jobs:
+        rule_count += len(job.config.rules)
+        for target in job.config.targets:
+            url = str(target.url)
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
+            render = bool(target.render or job.config.render)
+            if render:
+                render_count += 1
+            targets.append(
+                MonitoredTargetSummary(
+                    url=url,
+                    job_id=job.id,
+                    job_name=job.name,
+                    job_status=job.status.value,
+                    render=render,
+                    tags=target.tags,
+                    last_run_at=job.last_run_at,
+                    next_run_at=job.next_run_at,
+                    last_error=job.last_error,
+                )
+            )
+    failed_runs = [run for run in runs if run.status.value == "failed"]
+    return MonitoringOverview(
+        target_count=len(targets),
+        active_job_count=sum(1 for job in jobs if job.status.value == "active"),
+        failed_run_count=len(failed_runs),
+        rule_count=rule_count,
+        render_target_count=render_count,
+        recent_failure_count=sum(1 for target in targets if target.last_error),
+        targets=targets[:limit],
+    )
 
 
 @app.get("/health")
@@ -408,6 +514,95 @@ def extraction_dashboard(extraction_id: str, request: Request, store: JobStore =
     <pre>{_esc(payload)}</pre>
     """
     return HTMLResponse(_dashboard_shell("Extraction", content, token_query=token_query))
+
+
+@app.get("/portal", response_class=HTMLResponse)
+def customer_portal(request: Request, store: JobStore = Depends(get_job_store)) -> HTMLResponse:
+    key = _require_portal_key(request, store)
+    token_query = _portal_key_query(request)
+    account_id = key.account_id
+    project_id = key.project_id
+    jobs = store.list_jobs(limit=25, account_id=account_id, project_id=project_id)
+    runs = store.list_runs(limit=25, account_id=account_id, project_id=project_id)
+    extractions = store.list_extractions(limit=25, account_id=account_id, project_id=project_id)
+    usage = store.usage_summary(account_id=account_id, project_id=project_id)
+    billing = billing_usage_endpoint(key)
+    monitoring = _build_monitoring_overview(store, key, limit=100)
+    target_rows = [
+        [
+            _esc(target.url),
+            _esc(target.job_name),
+            _esc(target.job_status),
+            _esc("yes" if target.render else "no"),
+            _esc(", ".join(target.tags)),
+            _esc(target.next_run_at),
+            f"<span class='danger'>{_esc(target.last_error)}</span>" if target.last_error else "",
+        ]
+        for target in monitoring.targets
+    ]
+    run_rows = [
+        [
+            f"<code>{_esc(run.id)}</code>",
+            f"<code>{_esc(run.job_id)}</code>",
+            _esc(run.status.value),
+            _esc(run.event_count),
+            _esc(run.warning_count),
+            _esc(run.duration_ms),
+            _esc(run.created_at),
+        ]
+        for run in runs[:10]
+    ]
+    extraction_rows = [
+        [
+            f"<code>{_esc(record.id)}</code>",
+            _esc(record.kind.value),
+            _esc(record.status.value),
+            _esc(record.url),
+            _esc(record.confidence),
+            _esc(record.product_count),
+            _esc(record.created_at),
+        ]
+        for record in extractions[:10]
+    ]
+    usage_rows = [[_esc(item.metric.value), _esc(item.quantity)] for item in usage.items]
+    billing_rows = [
+        [
+            _esc(item.metric.value),
+            _esc(item.used),
+            _esc("unlimited" if item.limit is None else item.limit),
+            _esc("unlimited" if item.remaining is None else item.remaining),
+        ]
+        for item in billing.items
+    ]
+    content = f"""
+    <h1>Project Overview</h1>
+    <section class="grid">
+      <div class="metric">Monitored targets<strong>{monitoring.target_count}</strong></div>
+      <div class="metric">Active jobs<strong>{monitoring.active_job_count}</strong></div>
+      <div class="metric">Recent runs<strong>{len(runs)}</strong></div>
+      <div class="metric">Failed runs<strong>{monitoring.failed_run_count}</strong></div>
+      <div class="metric">Extractions<strong>{len(extractions)}</strong></div>
+      <div class="metric">Usage events<strong>{usage.total_quantity}</strong></div>
+      <div class="metric">Alert rules<strong>{monitoring.rule_count}</strong></div>
+      <div class="metric">Rendered targets<strong>{monitoring.render_target_count}</strong></div>
+    </section>
+    <section class="panel">
+      <strong>Account</strong> <code>{_esc(account_id)}</code>
+      <span class="muted">Project</span> <code>{_esc(project_id)}</code>
+      <span class="muted">Plan</span> <code>{_esc(key.billing_plan.value)}</code>
+    </section>
+    <h2>Monitored Products</h2>
+    {_table(["URL", "Job", "Status", "Render", "Tags", "Next Run", "Issue"], target_rows)}
+    <h2>Recent Runs</h2>
+    {_table(["ID", "Job", "Status", "Events", "Warnings", "Duration ms", "Created"], run_rows)}
+    <h2>Recent Extractions</h2>
+    {_table(["ID", "Kind", "Status", "URL", "Confidence", "Products", "Created"], extraction_rows)}
+    <h2>Usage</h2>
+    {_table(["Metric", "Quantity"], usage_rows)}
+    <h2>Quota</h2>
+    {_table(["Metric", "Used", "Limit", "Remaining"], billing_rows)}
+    """
+    return HTMLResponse(_portal_shell("Customer Portal", content, token_query=token_query))
 
 
 @app.post("/v1/extract/product", response_model=ProductExtractionResult)
@@ -669,6 +864,17 @@ def billing_usage_endpoint(key: ApiKeyRecord | None = Depends(require_api_key)) 
     return BillingUsageSnapshot(account_id=key.account_id, project_id=key.project_id, api_key_id=key.id, billing_plan=key.billing_plan, period_start=decisions[0].period_start, period_end=decisions[0].period_end, blocked=any(not decision.allowed for decision in decisions), items=[BillingUsageItem(metric=decision.metric, used=decision.used, limit=decision.limit, remaining=decision.remaining) for decision in decisions])
 
 
+@app.get("/v1/monitoring/overview", response_model=MonitoringOverview)
+def monitoring_overview_endpoint(
+    limit: int = 100,
+    store: JobStore = Depends(get_job_store),
+    key: ApiKeyRecord | None = Depends(require_api_key),
+) -> MonitoringOverview:
+    require_scope(key, "jobs:read")
+    require_scope(key, "runs:read")
+    return _build_monitoring_overview(store, key, limit=limit)
+
+
 @app.get("/v1/dashboard/summary", response_model=DashboardSummary)
 def dashboard_summary_endpoint(
     limit: int = 25,
@@ -684,6 +890,7 @@ def dashboard_summary_endpoint(
     runs = store.list_runs(limit=limit, account_id=account_id, project_id=project_id)
     extractions = store.list_extractions(limit=limit, account_id=account_id, project_id=project_id)
     usage = store.usage_summary(account_id=account_id, project_id=project_id)
+    monitoring = _build_monitoring_overview(store, key, limit=limit)
     decisions = [quota_decision(key, metric, 0) for metric in UsageMetric]
     billing = BillingUsageSnapshot(
         account_id=key.account_id,
@@ -716,6 +923,7 @@ def dashboard_summary_endpoint(
         },
         billing=billing,
         usage=usage,
+        monitoring=monitoring,
         jobs=jobs,
         runs=runs,
         extractions=extractions,

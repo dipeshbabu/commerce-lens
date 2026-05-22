@@ -56,5 +56,41 @@ def test_dashboard_summary_is_scoped_to_api_key(monkeypatch, tmp_path) -> None:
     assert payload["account_id"] == "acct_demo"
     assert payload["project_id"] == "proj_demo"
     assert payload["counts"]["jobs"] == 1
+    assert payload["monitoring"]["target_count"] == 1
+    assert payload["monitoring"]["rule_count"] == 1
     assert payload["usage"]["total_quantity"] == 4
     assert payload["billing"]["billing_plan"] == "free"
+
+
+def test_monitoring_overview_and_customer_portal(monkeypatch, tmp_path) -> None:
+    db_path = tmp_path / "jobs.db"
+    monkeypatch.setenv("COMMERCELENS_REQUIRE_API_KEY", "true")
+    monkeypatch.setenv("COMMERCELENS_JOBS_DB", str(db_path))
+    store = JobStore(db_path)
+    key = store.create_api_key(
+        ApiKeyCreate(
+            name="customer",
+            account_id="acct_demo",
+            project_id="proj_demo",
+            scopes=["*"],
+        )
+    )
+    store.create_job(
+        MonitoringJobCreate(
+            name="competitor watch",
+            config=sample_config(),
+            account_id="acct_demo",
+            project_id="proj_demo",
+        )
+    )
+    client = TestClient(app)
+
+    overview = client.get("/v1/monitoring/overview", headers={"X-API-Key": key.token})
+    portal = client.get(f"/portal?api_key={key.token}")
+
+    assert overview.status_code == 200
+    assert overview.json()["target_count"] == 1
+    assert overview.json()["targets"][0]["job_name"] == "competitor watch"
+    assert portal.status_code == 200
+    assert "customer portal" in portal.text
+    assert "competitor watch" in portal.text
