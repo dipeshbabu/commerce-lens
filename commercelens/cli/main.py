@@ -27,6 +27,7 @@ from commercelens.intelligence.price_summary import summarize_prices
 from commercelens.matching.catalog_diff import diff_catalogs
 from commercelens.matching.identity import build_identity_graph
 from commercelens.matching.products import match_products
+from commercelens.ops.preflight import run_production_preflight
 from commercelens.quality.benchmarks import build_quality_report, run_benchmark_suite
 from commercelens.storage.exporters import write_csv, write_jsonl
 from commercelens.storage.price_store import PriceSnapshotStore
@@ -255,6 +256,15 @@ def migrate_postgres(
     applied = migrate_postgres_dsn(dsn)
     payload = {"applied": applied, "count": len(applied)}
     _write_or_print(payload, out=out)
+
+
+@app.command("production-check")
+def production_check(out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+    """Validate required hosted production environment settings."""
+    result = run_production_preflight()
+    _write_or_print(result.model_dump(mode="json", exclude_none=True), out=out)
+    if not result.passed:
+        raise typer.Exit(code=1)
 
 
 @app.command("usage-events")
