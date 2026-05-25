@@ -65,6 +65,11 @@ portal. The response is scoped to the key's account/project and includes counts,
 billing quota state, usage totals, recent jobs, recent runs, and recent
 extractions.
 
+CommerceLens also includes a built-in `/portal` browser UI for early hosted
+customers and demos. It uses the same tenant API key scope and includes job,
+run, extraction, usage, quota, alert activity, and JSON export views. See
+`docs/customer_portal.md`.
+
 ## API Service
 
 ```bash

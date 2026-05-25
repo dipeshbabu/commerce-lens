@@ -5,7 +5,17 @@ from fastapi.testclient import TestClient
 from commercelens.alerts.config import AlertRule, MonitorConfig, MonitorTarget
 from commercelens.alerts.rules import AlertCondition
 from commercelens.api.main import app
-from commercelens.jobs.models import ApiKeyCreate, MonitoringJobCreate, UsageEvent, UsageMetric
+from commercelens.jobs.models import (
+    ApiKeyCreate,
+    ExtractionCreate,
+    ExtractionKind,
+    ExtractionStatus,
+    JobRun,
+    MonitoringJobCreate,
+    RunStatus,
+    UsageEvent,
+    UsageMetric,
+)
 from commercelens.jobs.store import JobStore
 
 
@@ -75,7 +85,7 @@ def test_monitoring_overview_and_customer_portal(monkeypatch, tmp_path) -> None:
             scopes=["*"],
         )
     )
-    store.create_job(
+    job = store.create_job(
         MonitoringJobCreate(
             name="competitor watch",
             config=sample_config(),
@@ -83,10 +93,45 @@ def test_monitoring_overview_and_customer_portal(monkeypatch, tmp_path) -> None:
             project_id="proj_demo",
         )
     )
+    other_job = store.create_job(
+        MonitoringJobCreate(
+            name="hidden tenant watch",
+            config=sample_config(),
+            account_id="acct_other",
+            project_id="proj_other",
+        )
+    )
+    run = store.save_run(
+        JobRun(
+            job_id=job.id,
+            status=RunStatus.succeeded,
+            account_id="acct_demo",
+            project_id="proj_demo",
+            event_count=2,
+            delivery_count=1,
+            warning_count=0,
+            result={"events": [{"change_type": "price_drop", "product": "Example Product"}]},
+        )
+    )
+    extraction = store.record_extraction(
+        ExtractionCreate(
+            kind=ExtractionKind.product,
+            status=ExtractionStatus.succeeded,
+            url="https://example.com/product",
+            account_id="acct_demo",
+            project_id="proj_demo",
+            payload={"product": {"name": "Example Product", "price": {"amount": 10, "currency": "USD"}}},
+        )
+    )
     client = TestClient(app)
 
     overview = client.get("/v1/monitoring/overview", headers={"X-API-Key": key.token})
     portal = client.get(f"/portal?api_key={key.token}")
+    job_detail = client.get(f"/portal/jobs/{job.id}?api_key={key.token}")
+    run_detail = client.get(f"/portal/runs/{run.id}?api_key={key.token}")
+    extraction_detail = client.get(f"/portal/extractions/{extraction.id}?api_key={key.token}")
+    hidden_detail = client.get(f"/portal/jobs/{other_job.id}?api_key={key.token}")
+    export_response = client.get(f"/portal/export/jobs?api_key={key.token}")
 
     assert overview.status_code == 200
     assert overview.json()["target_count"] == 1
@@ -94,3 +139,15 @@ def test_monitoring_overview_and_customer_portal(monkeypatch, tmp_path) -> None:
     assert portal.status_code == 200
     assert "customer portal" in portal.text
     assert "competitor watch" in portal.text
+    assert "Monitoring Jobs" in portal.text
+    assert "/portal/export/jobs" in portal.text
+    assert job_detail.status_code == 200
+    assert "Alert Rules" in job_detail.text
+    assert "price drop" in job_detail.text
+    assert run_detail.status_code == 200
+    assert "price_drop" in run_detail.text
+    assert extraction_detail.status_code == 200
+    assert "Example Product" in extraction_detail.text
+    assert hidden_detail.status_code == 404
+    assert export_response.status_code == 200
+    assert export_response.json()["items"][0]["name"] == "competitor watch"

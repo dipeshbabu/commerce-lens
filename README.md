@@ -58,6 +58,7 @@ CommerceLens is currently in early v0.9 commercial product development. The curr
 - Usage event logging and usage summaries
 - API-key monthly domain quotas
 - Stripe subscription webhook plan sync
+- Customer-facing portal for jobs, runs, extractions, usage, quotas, and JSON exports
 - SQLite or Postgres job/run/API-key/usage store
 - Docker and docker-compose deployment files
 - Python SDK
@@ -579,6 +580,15 @@ Fetch a customer dashboard summary:
 curl http://127.0.0.1:8000/v1/dashboard/summary \
   -H "X-API-Key: cl_REPLACE_WITH_TOKEN"
 ```
+
+Open the customer portal:
+
+```text
+http://127.0.0.1:8000/portal?api_key=cl_REPLACE_WITH_TOKEN
+```
+
+The portal provides tenant-scoped job, run, extraction, usage, quota, alert
+activity, and JSON export views. See `docs/customer_portal.md`.
 
 Match product records:
 

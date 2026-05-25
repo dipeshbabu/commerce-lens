@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import os
+import json
 from collections import Counter
 from html import escape
 from typing import Sequence
 from urllib.parse import urlencode
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from commercelens.alerts.runner import MonitorRunResult, run_monitor_config, run_monitor_config_file
 from commercelens.api.auth import get_job_store, require_admin_access, require_admin_token, require_api_key
@@ -213,6 +214,14 @@ def _table(headers: list[str], rows: Sequence[Sequence[object]]) -> str:
         for row in rows
     )
     return f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
+
+
+def _pre_json(value: object) -> str:
+    return f"<pre>{_esc(json.dumps(value, indent=2, sort_keys=True, default=str))}</pre>"
+
+
+def _portal_href(path: str, token_query: str) -> str:
+    return f"{path}{token_query}"
 
 
 def _build_monitoring_overview(
@@ -522,6 +531,7 @@ def customer_portal(request: Request, store: JobStore = Depends(get_job_store)) 
     token_query = _portal_key_query(request)
     account_id = key.account_id
     project_id = key.project_id
+    jobs = store.list_jobs(limit=25, account_id=account_id, project_id=project_id)
     runs = store.list_runs(limit=25, account_id=account_id, project_id=project_id)
     extractions = store.list_extractions(limit=25, account_id=account_id, project_id=project_id)
     usage = store.usage_summary(account_id=account_id, project_id=project_id)
@@ -530,7 +540,7 @@ def customer_portal(request: Request, store: JobStore = Depends(get_job_store)) 
     target_rows = [
         [
             _esc(target.url),
-            _esc(target.job_name),
+            f"<a href='{_portal_href(f'/portal/jobs/{_esc(target.job_id)}', token_query)}'>{_esc(target.job_name)}</a>",
             _esc(target.job_status),
             _esc("yes" if target.render else "no"),
             _esc(", ".join(target.tags)),
@@ -539,12 +549,26 @@ def customer_portal(request: Request, store: JobStore = Depends(get_job_store)) 
         ]
         for target in monitoring.targets
     ]
+    job_rows = [
+        [
+            f"<a href='{_portal_href(f'/portal/jobs/{_esc(job.id)}', token_query)}'><code>{_esc(job.id)}</code></a>",
+            _esc(job.name),
+            _esc(job.status.value),
+            _esc(job.schedule_kind.value),
+            _esc(job.interval_minutes),
+            _esc(len(job.config.targets)),
+            _esc(len(job.config.rules)),
+            _esc(job.next_run_at),
+        ]
+        for job in jobs[:10]
+    ]
     run_rows = [
         [
-            f"<code>{_esc(run.id)}</code>",
-            f"<code>{_esc(run.job_id)}</code>",
+            f"<a href='{_portal_href(f'/portal/runs/{_esc(run.id)}', token_query)}'><code>{_esc(run.id)}</code></a>",
+            f"<a href='{_portal_href(f'/portal/jobs/{_esc(run.job_id)}', token_query)}'><code>{_esc(run.job_id)}</code></a>",
             _esc(run.status.value),
             _esc(run.event_count),
+            _esc(run.delivery_count),
             _esc(run.warning_count),
             _esc(run.duration_ms),
             _esc(run.created_at),
@@ -553,7 +577,7 @@ def customer_portal(request: Request, store: JobStore = Depends(get_job_store)) 
     ]
     extraction_rows = [
         [
-            f"<code>{_esc(record.id)}</code>",
+            f"<a href='{_portal_href(f'/portal/extractions/{_esc(record.id)}', token_query)}'><code>{_esc(record.id)}</code></a>",
             _esc(record.kind.value),
             _esc(record.status.value),
             _esc(record.url),
@@ -572,6 +596,12 @@ def customer_portal(request: Request, store: JobStore = Depends(get_job_store)) 
             _esc("unlimited" if item.remaining is None else item.remaining),
         ]
         for item in billing.items
+    ]
+    export_rows = [
+        ["Jobs", f"<a href='{_portal_href('/portal/export/jobs', token_query)}'>JSON</a>"],
+        ["Runs", f"<a href='{_portal_href('/portal/export/runs', token_query)}'>JSON</a>"],
+        ["Extractions", f"<a href='{_portal_href('/portal/export/extractions', token_query)}'>JSON</a>"],
+        ["Usage events", f"<a href='{_portal_href('/portal/export/usage', token_query)}'>JSON</a>"],
     ]
     content = f"""
     <h1>Project Overview</h1>
@@ -592,16 +622,172 @@ def customer_portal(request: Request, store: JobStore = Depends(get_job_store)) 
     </section>
     <h2>Monitored Products</h2>
     {_table(["URL", "Job", "Status", "Render", "Tags", "Next Run", "Issue"], target_rows)}
+    <h2>Monitoring Jobs</h2>
+    {_table(["ID", "Name", "Status", "Schedule", "Interval", "Targets", "Rules", "Next Run"], job_rows)}
     <h2>Recent Runs</h2>
-    {_table(["ID", "Job", "Status", "Events", "Warnings", "Duration ms", "Created"], run_rows)}
+    {_table(["ID", "Job", "Status", "Events", "Deliveries", "Warnings", "Duration ms", "Created"], run_rows)}
     <h2>Recent Extractions</h2>
     {_table(["ID", "Kind", "Status", "URL", "Confidence", "Products", "Created"], extraction_rows)}
+    <h2>Exports</h2>
+    {_table(["Dataset", "Download"], export_rows)}
     <h2>Usage</h2>
     {_table(["Metric", "Quantity"], usage_rows)}
     <h2>Quota</h2>
     {_table(["Metric", "Used", "Limit", "Remaining"], billing_rows)}
     """
     return HTMLResponse(_portal_shell("Customer Portal", content, token_query=token_query))
+
+
+@app.get("/portal/jobs/{job_id}", response_class=HTMLResponse)
+def customer_portal_job(job_id: str, request: Request, store: JobStore = Depends(get_job_store)) -> HTMLResponse:
+    key = _require_portal_key(request, store)
+    token_query = _portal_key_query(request)
+    job = store.get_job(job_id, account_id=key.account_id, project_id=key.project_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    runs = store.list_runs(job_id=job.id, limit=25, account_id=key.account_id, project_id=key.project_id)
+    target_rows = [
+        [
+            _esc(target.url),
+            _esc(getattr(target, "name", None)),
+            _esc("yes" if target.render or job.config.render else "no"),
+            _esc(", ".join(target.tags)),
+        ]
+        for target in job.config.targets
+    ]
+    rule_rows = [
+        [
+            _esc(rule.name),
+            _esc(rule.condition.value if hasattr(rule.condition, "value") else rule.condition),
+            _esc(rule.threshold),
+        ]
+        for rule in job.config.rules
+    ]
+    run_rows = [
+        [
+            f"<a href='{_portal_href(f'/portal/runs/{_esc(run.id)}', token_query)}'><code>{_esc(run.id)}</code></a>",
+            _esc(run.status.value),
+            _esc(run.event_count),
+            _esc(run.delivery_count),
+            _esc(run.warning_count),
+            _esc(run.duration_ms),
+            _esc(run.created_at),
+        ]
+        for run in runs
+    ]
+    rows = [
+        ["Name", _esc(job.name)],
+        ["Status", _esc(job.status.value)],
+        ["Schedule", _esc(job.schedule_kind.value)],
+        ["Interval minutes", _esc(job.interval_minutes)],
+        ["Next run", _esc(job.next_run_at)],
+        ["Last run", _esc(job.last_run_at)],
+        ["Last error", f"<span class='danger'>{_esc(job.last_error)}</span>" if job.last_error else ""],
+        ["Tags", _esc(", ".join(job.tags))],
+        ["Retries", _esc(job.max_retries)],
+        ["Retry backoff seconds", _esc(job.retry_backoff_seconds)],
+    ]
+    content = f"""
+    <p><a href="{_portal_href('/portal', token_query)}">Overview</a></p>
+    <h1>Monitoring Job</h1>
+    {_table(["Field", "Value"], rows)}
+    <h2>Targets</h2>
+    {_table(["URL", "Name", "Render", "Tags"], target_rows)}
+    <h2>Alert Rules</h2>
+    {_table(["Name", "Condition", "Threshold"], rule_rows)}
+    <h2>Recent Runs</h2>
+    {_table(["ID", "Status", "Events", "Deliveries", "Warnings", "Duration ms", "Created"], run_rows)}
+    """
+    return HTMLResponse(_portal_shell(job.name, content, token_query=token_query))
+
+
+@app.get("/portal/runs/{run_id}", response_class=HTMLResponse)
+def customer_portal_run(run_id: str, request: Request, store: JobStore = Depends(get_job_store)) -> HTMLResponse:
+    key = _require_portal_key(request, store)
+    token_query = _portal_key_query(request)
+    run = store.get_run(run_id, account_id=key.account_id, project_id=key.project_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found.")
+    rows = [
+        ["ID", f"<code>{_esc(run.id)}</code>"],
+        ["Job", f"<a href='{_portal_href(f'/portal/jobs/{_esc(run.job_id)}', token_query)}'><code>{_esc(run.job_id)}</code></a>"],
+        ["Status", _esc(run.status.value)],
+        ["Attempt", _esc(run.attempt)],
+        ["Events", _esc(run.event_count)],
+        ["Deliveries", _esc(run.delivery_count)],
+        ["Warnings", _esc(run.warning_count)],
+        ["Duration ms", _esc(run.duration_ms)],
+        ["Started", _esc(run.started_at)],
+        ["Finished", _esc(run.finished_at)],
+        ["Created", _esc(run.created_at)],
+        ["Error", f"<span class='danger'>{_esc(run.error)}</span>" if run.error else ""],
+    ]
+    content = f"""
+    <p><a href="{_portal_href('/portal', token_query)}">Overview</a></p>
+    <h1>Job Run</h1>
+    {_table(["Field", "Value"], rows)}
+    <h2>Result</h2>
+    {_pre_json(run.result or {})}
+    """
+    return HTMLResponse(_portal_shell("Job Run", content, token_query=token_query))
+
+
+@app.get("/portal/extractions/{extraction_id}", response_class=HTMLResponse)
+def customer_portal_extraction(extraction_id: str, request: Request, store: JobStore = Depends(get_job_store)) -> HTMLResponse:
+    key = _require_portal_key(request, store)
+    token_query = _portal_key_query(request)
+    record = store.get_extraction(extraction_id, account_id=key.account_id, project_id=key.project_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Extraction not found.")
+    product = (record.payload or {}).get("product", {}) if record.payload else {}
+    rows = [
+        ["ID", f"<code>{_esc(record.id)}</code>"],
+        ["Kind", _esc(record.kind.value)],
+        ["Status", _esc(record.status.value)],
+        ["URL", _esc(record.url)],
+        ["Confidence", _esc(record.confidence)],
+        ["Product count", _esc(record.product_count)],
+        ["Created", _esc(record.created_at)],
+        ["Error", f"<span class='danger'>{_esc(record.error)}</span>" if record.error else ""],
+    ]
+    product_rows = [
+        ["Name", _esc(product.get("name"))],
+        ["Brand", _esc(product.get("brand"))],
+        ["Availability", _esc(product.get("availability"))],
+        ["Price", _esc((product.get("price") or {}).get("amount"))],
+        ["Currency", _esc((product.get("price") or {}).get("currency"))],
+    ] if product else []
+    content = f"""
+    <p><a href="{_portal_href('/portal', token_query)}">Overview</a></p>
+    <h1>Extraction</h1>
+    {_table(["Field", "Value"], rows)}
+    <h2>Product Summary</h2>
+    {_table(["Field", "Value"], product_rows)}
+    <h2>Payload</h2>
+    {_pre_json(record.payload or {})}
+    """
+    return HTMLResponse(_portal_shell("Extraction", content, token_query=token_query))
+
+
+@app.get("/portal/export/{resource}")
+def customer_portal_export(resource: str, request: Request, store: JobStore = Depends(get_job_store)) -> JSONResponse:
+    key = _require_portal_key(request, store)
+    account_id = key.account_id
+    project_id = key.project_id
+    if resource == "jobs":
+        payload = [job.model_dump(mode="json", exclude_none=True) for job in store.list_jobs(limit=1000, account_id=account_id, project_id=project_id)]
+    elif resource == "runs":
+        payload = [run.model_dump(mode="json", exclude_none=True) for run in store.list_runs(limit=1000, account_id=account_id, project_id=project_id)]
+    elif resource == "extractions":
+        payload = [record.model_dump(mode="json", exclude_none=True) for record in store.list_extractions(limit=1000, account_id=account_id, project_id=project_id)]
+    elif resource == "usage":
+        payload = [event.model_dump(mode="json", exclude_none=True) for event in store.list_usage_events(limit=1000, account_id=account_id, project_id=project_id)]
+    else:
+        raise HTTPException(status_code=404, detail="Export not found.")
+    return JSONResponse(
+        content={"account_id": account_id, "project_id": project_id, "resource": resource, "items": payload},
+        headers={"Content-Disposition": f'attachment; filename="commercelens-{resource}.json"'},
+    )
 
 
 @app.post("/v1/extract/product", response_model=ProductExtractionResult)
