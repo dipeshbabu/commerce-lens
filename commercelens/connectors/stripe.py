@@ -5,6 +5,8 @@ import hmac
 import json
 import time
 from typing import Any
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 from commercelens.jobs.models import AccountStatus, BillingPlan
 
@@ -89,3 +91,47 @@ def apply_subscription_event(store: Any, event: dict[str, Any]) -> dict[str, Any
         "billing_plan": account.billing_plan.value,
         "status": account.status.value,
     }
+
+
+def create_checkout_session(
+    *,
+    secret_key: str,
+    price_id: str,
+    success_url: str,
+    cancel_url: str,
+    account_id: str,
+    billing_plan: BillingPlan,
+    customer_email: str | None = None,
+    trial_days: int | None = None,
+    http_post: Any | None = None,
+) -> dict[str, Any]:
+    """Create a Stripe Checkout Session without requiring the Stripe SDK."""
+    form: dict[str, str] = {
+        "mode": "subscription",
+        "line_items[0][price]": price_id,
+        "line_items[0][quantity]": "1",
+        "success_url": success_url,
+        "cancel_url": cancel_url,
+        "subscription_data[metadata][account_id]": account_id,
+        "subscription_data[metadata][billing_plan]": billing_plan.value,
+        "metadata[account_id]": account_id,
+        "metadata[billing_plan]": billing_plan.value,
+    }
+    if customer_email:
+        form["customer_email"] = customer_email
+    if trial_days is not None:
+        form["subscription_data[trial_period_days]"] = str(trial_days)
+    encoded = urlencode(form).encode("utf-8")
+    if http_post is not None:
+        return http_post(encoded)
+    request = Request(
+        "https://api.stripe.com/v1/checkout/sessions",
+        data=encoded,
+        headers={
+            "Authorization": f"Bearer {secret_key}",
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+        method="POST",
+    )
+    with urlopen(request, timeout=20) as response:  # noqa: S310 - Stripe API endpoint is fixed.
+        return json.loads(response.read().decode("utf-8"))

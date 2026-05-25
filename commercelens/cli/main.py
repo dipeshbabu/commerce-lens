@@ -20,7 +20,7 @@ from commercelens.extractors.listing import extract_listing, extract_listing_fro
 from commercelens.extractors.product import extract_product, extract_product_from_html
 from commercelens.jobs.billing import MONTHLY_PLAN_LIMITS
 from commercelens.jobs.migrations import migrate_postgres_dsn
-from commercelens.jobs.models import ApiKeyCreate, BillingPlan, BillingUsageItem, BillingUsageSnapshot, JobStatus, MonitoringJobCreate, MonitoringJobUpdate, ScheduleKind, UsageMetric
+from commercelens.jobs.models import AccountCreate, AccountStatus, ApiKeyCreate, BillingPlan, BillingUsageItem, BillingUsageSnapshot, JobStatus, MemberCreate, MemberRole, MonitoringJobCreate, MonitoringJobUpdate, ProjectCreate, ScheduleKind, UsageMetric
 from commercelens.jobs.store import JobStore
 from commercelens.jobs.worker import MonitoringWorker, run_job_now
 from commercelens.intelligence.price_summary import summarize_prices
@@ -183,16 +183,16 @@ def run_job(job_id: str = typer.Argument(...), jobs_db: Path | None = typer.Opti
 
 
 @app.command("worker-tick")
-def worker_tick(jobs_db: Path | None = typer.Option(None, "--jobs-db"), limit: int = typer.Option(25, "--limit", min=1, max=100), dry_run: bool = typer.Option(False, "--dry-run"), no_deliver: bool = typer.Option(False, "--no-deliver"), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+def worker_tick(jobs_db: Path | None = typer.Option(None, "--jobs-db"), limit: int = typer.Option(25, "--limit", min=1, max=100), dry_run: bool = typer.Option(False, "--dry-run"), no_deliver: bool = typer.Option(False, "--no-deliver"), domain_concurrency: int | None = typer.Option(None, "--domain-concurrency", min=1), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
     """Execute due monitoring jobs once."""
-    result = MonitoringWorker(store=_job_store(jobs_db)).tick(limit=limit, dry_run=dry_run, deliver=not no_deliver)
+    result = MonitoringWorker(store=_job_store(jobs_db)).tick(limit=limit, dry_run=dry_run, deliver=not no_deliver, domain_concurrency=domain_concurrency)
     _write_or_print(result.model_dump(mode="json", exclude_none=True), out=out)
 
 
 @app.command("worker")
-def worker(jobs_db: Path | None = typer.Option(None, "--jobs-db"), poll_seconds: int = typer.Option(60, "--poll-seconds", min=1), limit: int = typer.Option(25, "--limit", min=1, max=100), dry_run: bool = typer.Option(False, "--dry-run"), no_deliver: bool = typer.Option(False, "--no-deliver")) -> None:
+def worker(jobs_db: Path | None = typer.Option(None, "--jobs-db"), poll_seconds: int = typer.Option(60, "--poll-seconds", min=1), limit: int = typer.Option(25, "--limit", min=1, max=100), dry_run: bool = typer.Option(False, "--dry-run"), no_deliver: bool = typer.Option(False, "--no-deliver"), domain_concurrency: int | None = typer.Option(None, "--domain-concurrency", min=1)) -> None:
     """Run the monitoring worker loop."""
-    MonitoringWorker(store=_job_store(jobs_db)).run_forever(poll_seconds=poll_seconds, limit=limit, dry_run=dry_run, deliver=not no_deliver)
+    MonitoringWorker(store=_job_store(jobs_db)).run_forever(poll_seconds=poll_seconds, limit=limit, dry_run=dry_run, deliver=not no_deliver, domain_concurrency=domain_concurrency)
 
 
 @app.command("list-runs")
@@ -219,6 +219,44 @@ def create_api_key(name: str = typer.Option(..., "--name"), jobs_db: Path | None
         domain_overrides[domain.lower()] = int(raw_limit)
     result = _job_store(jobs_db).create_api_key(ApiKeyCreate(name=name, owner=owner, account_id=account_id, project_id=project_id, scopes=scopes or ["*"], billing_plan=billing_plan, monthly_quota_overrides=overrides, monthly_domain_quotas=domain_overrides))
     _write_or_print(result.model_dump(mode="json", exclude_none=True), out=out)
+
+
+@app.command("onboard-customer")
+def onboard_customer(
+    account_name: str = typer.Option(..., "--account-name"),
+    owner_email: str = typer.Option(..., "--owner-email"),
+    project_name: str = typer.Option("Default", "--project-name"),
+    project_slug: str | None = typer.Option(None, "--project-slug"),
+    jobs_db: Path | None = typer.Option(None, "--jobs-db"),
+    billing_plan: BillingPlan = typer.Option(BillingPlan.free, "--billing-plan"),
+    account_status: AccountStatus = typer.Option(AccountStatus.trialing, "--account-status"),
+    member_name: str | None = typer.Option(None, "--member-name"),
+    api_key_name: str = typer.Option("customer portal key", "--api-key-name"),
+    scopes: list[str] | None = typer.Option(None, "--scope"),
+    domain_quota: list[str] | None = typer.Option(None, "--domain-quota"),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+) -> None:
+    """Create account, project, owner member, API key, and portal URL in one step."""
+    domain_overrides: dict[str, int] = {}
+    for item in domain_quota or []:
+        if "=" not in item:
+            raise typer.BadParameter("Domain quota overrides must use domain=limit format.")
+        domain, raw_limit = item.split("=", 1)
+        domain_overrides[domain.lower()] = int(raw_limit)
+    store = _job_store(jobs_db)
+    account = store.create_account(AccountCreate(name=account_name, owner=owner_email, billing_plan=billing_plan, status=account_status))
+    project = store.create_project(account.id, ProjectCreate(name=project_name, slug=project_slug))
+    member = store.create_member(account.id, MemberCreate(email=owner_email, role=MemberRole.owner, name=member_name))
+    key_result = store.create_api_key(ApiKeyCreate(name=api_key_name, owner=owner_email, account_id=account.id, project_id=project.id, scopes=scopes or ["*"], billing_plan=billing_plan, monthly_domain_quotas=domain_overrides))
+    payload = {
+        "account": account.model_dump(mode="json", exclude_none=True),
+        "project": project.model_dump(mode="json", exclude_none=True),
+        "member": member.model_dump(mode="json", exclude_none=True),
+        "api_key": key_result.key.model_dump(mode="json", exclude_none=True),
+        "token": key_result.token,
+        "portal_path": f"/portal?api_key={key_result.token}",
+    }
+    _write_or_print(payload, out=out)
 
 
 @app.command("billing-plans")

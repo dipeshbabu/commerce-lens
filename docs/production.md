@@ -54,7 +54,8 @@ https://api.example.com/dashboard?admin_token=replace-with-admin-token
 The dashboard shows accounts, projects, members, API keys, jobs, runs, and usage.
 It also shows persisted product and listing extraction results from
 `/v1/extract/product` and `/v1/extract/listing`, including success/failure state,
-confidence, source URL, payload, and error details. It is intended for internal
+confidence, source URL, payload, failure class, recommendation, and error
+details. It is intended for internal
 operators, not customer self-service. Put it behind VPN, SSO, or an
 authenticated edge before using it in production.
 
@@ -67,8 +68,12 @@ extractions.
 
 CommerceLens also includes a built-in `/portal` browser UI for early hosted
 customers and demos. It uses the same tenant API key scope and includes job,
-run, extraction, usage, quota, alert activity, and JSON export views. See
+run, extraction, usage, quota, alert activity, failure triage, and JSON export views. See
 `docs/customer_portal.md`.
+
+Use `/v1/issues` with a tenant API key for customer-visible failure triage. The
+response includes failed runs/extractions, stable failure classes, and
+recommendations.
 
 ## API Service
 
@@ -128,6 +133,8 @@ concurrency controls and queue-depth alerts are configured.
 - Rate limits exist at the edge for anonymous and authenticated traffic.
 - Outbound fetch volume is monitored by domain.
 - High-risk or expensive customer keys have monthly domain quotas.
+- Worker processes set `COMMERCELENS_DOMAIN_CONCURRENCY_LIMIT` or pass
+  `--domain-concurrency` to defer excess same-domain jobs.
 - SMTP/webhook secrets are stored in the platform secret manager.
 - Customer exports and debug snapshots are stored outside the repo.
 
@@ -171,6 +178,16 @@ Active subscriptions set the account to `active`, trials set it to `trialing`,
 and deleted or non-active subscriptions suspend the account. The webhook stores
 the Stripe customer ID, subscription ID, and subscription status in account
 metadata for operator review.
+
+Set `STRIPE_SECRET_KEY` to create Checkout Sessions from the admin API:
+
+```text
+POST /v1/billing/stripe/checkout-session
+```
+
+The request stores `account_id` and `billing_plan` in Stripe subscription
+metadata so the existing webhook can sync plan and account status after
+checkout.
 
 ## Sellable Product Baseline
 

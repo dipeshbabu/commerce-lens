@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from commercelens.api.main import app
-from commercelens.connectors.stripe import verify_stripe_signature
+from commercelens.connectors.stripe import create_checkout_session, verify_stripe_signature
 from commercelens.jobs.models import AccountCreate, BillingPlan
 from commercelens.jobs.store import JobStore
 
@@ -62,3 +62,63 @@ def test_stripe_webhook_updates_account_plan(monkeypatch, tmp_path) -> None:
     assert updated is not None
     assert updated.billing_plan == BillingPlan.team
     assert updated.metadata["stripe_subscription_id"] == "sub_123"
+
+
+def test_create_checkout_session_encodes_subscription_metadata() -> None:
+    captured: dict[str, bytes] = {}
+
+    def fake_post(encoded: bytes) -> dict:
+        captured["encoded"] = encoded
+        return {"id": "cs_test", "url": "https://checkout.stripe.test/session"}
+
+    session = create_checkout_session(
+        secret_key="sk_test",
+        price_id="price_123",
+        success_url="https://app.test/success",
+        cancel_url="https://app.test/cancel",
+        account_id="acct_123",
+        billing_plan=BillingPlan.team,
+        customer_email="owner@app.test",
+        trial_days=14,
+        http_post=fake_post,
+    )
+
+    encoded = captured["encoded"].decode("utf-8")
+    assert session["id"] == "cs_test"
+    assert "subscription_data%5Bmetadata%5D%5Baccount_id%5D=acct_123" in encoded
+    assert "subscription_data%5Bmetadata%5D%5Bbilling_plan%5D=team" in encoded
+    assert "subscription_data%5Btrial_period_days%5D=14" in encoded
+
+
+def test_stripe_checkout_endpoint_creates_session(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("COMMERCELENS_ADMIN_TOKEN", "secret")
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test")
+    monkeypatch.setenv("COMMERCELENS_JOBS_DB", str(tmp_path / "jobs.db"))
+    store = JobStore(tmp_path / "jobs.db")
+    account = store.create_account(AccountCreate(name="Acme", owner="owner@acme.test"))
+
+    def fake_create_checkout_session(**kwargs) -> dict:
+        assert kwargs["account_id"] == account.id
+        assert kwargs["billing_plan"] == BillingPlan.team
+        return {"id": "cs_test", "url": "https://checkout.stripe.test/session"}
+
+    monkeypatch.setattr("commercelens.api.main.create_checkout_session", fake_create_checkout_session)
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/billing/stripe/checkout-session",
+        headers={"X-Admin-Token": "secret"},
+        json={
+            "account_id": account.id,
+            "price_id": "price_123",
+            "success_url": "https://app.test/success",
+            "cancel_url": "https://app.test/cancel",
+            "billing_plan": "team",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["url"] == "https://checkout.stripe.test/session"
+    updated = JobStore(tmp_path / "jobs.db").get_account(account.id)
+    assert updated is not None
+    assert updated.metadata["stripe_checkout_session_id"] == "cs_test"

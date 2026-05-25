@@ -9,6 +9,7 @@ from urllib.parse import urlencode
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
+from pydantic import BaseModel, Field
 
 from commercelens.alerts.runner import MonitorRunResult, run_monitor_config, run_monitor_config_file
 from commercelens.api.auth import get_job_store, require_admin_access, require_admin_token, require_api_key
@@ -17,6 +18,7 @@ from commercelens.api.quota import quota_decision, require_quota, require_scope
 from commercelens.connectors.datasets import DatasetLoadResult
 from commercelens.connectors.stripe import (
     apply_subscription_event,
+    create_checkout_session,
     parse_stripe_event,
     verify_stripe_signature,
 )
@@ -27,7 +29,8 @@ from commercelens.core.renderer import RenderError
 from commercelens.extractors.listing import extract_listing, extract_listing_from_html
 from commercelens.extractors.product import extract_product, extract_product_from_html
 from commercelens.intelligence.price_summary import PriceIntelligenceSummary, summarize_prices
-from commercelens.jobs.models import AccountCreate, AccountRecord, ApiKeyCreate, ApiKeyCreateResult, ApiKeyRecord, BillingUsageItem, BillingUsageSnapshot, ExtractionCreate, ExtractionKind, ExtractionRecord, ExtractionStatus, JobRun, JobStatus, MemberCreate, MemberRecord, MonitoringJob, MonitoringJobCreate, MonitoringJobUpdate, ProjectCreate, ProjectRecord, UsageEvent, UsageMetric, UsageSummary, WorkerTickResult
+from commercelens.jobs.failures import classify_failure, failed_extraction_issue, failed_run_issue, recommendation_for_failure
+from commercelens.jobs.models import AccountCreate, AccountRecord, AccountStatus, ApiKeyCreate, ApiKeyCreateResult, ApiKeyRecord, BillingPlan, BillingUsageItem, BillingUsageSnapshot, ExtractionCreate, ExtractionKind, ExtractionRecord, ExtractionStatus, JobRun, JobStatus, MemberCreate, MemberRecord, MemberRole, MonitoringJob, MonitoringJobCreate, MonitoringJobUpdate, ProjectCreate, ProjectRecord, UsageEvent, UsageMetric, UsageSummary, WorkerTickResult
 from commercelens.jobs.store import JobStore
 from commercelens.jobs.worker import MonitoringWorker, run_job_now
 from commercelens.matching.catalog_diff import CatalogDiffResult, diff_catalogs
@@ -51,6 +54,46 @@ from commercelens.version import __version__
 API_VERSION = __version__
 
 app = FastAPI(title="CommerceLens API", description="Commercial product, catalog, monitoring, alerting, matching, and price intelligence extraction for developers.", version=API_VERSION)
+
+
+class OnboardingRequest(BaseModel):
+    account_name: str
+    owner_email: str
+    project_name: str = "Default"
+    project_slug: str | None = None
+    billing_plan: BillingPlan = BillingPlan.free
+    account_status: AccountStatus = AccountStatus.trialing
+    member_name: str | None = None
+    member_role: MemberRole = MemberRole.owner
+    api_key_name: str = "customer portal key"
+    scopes: list[str] = Field(default_factory=lambda: ["*"])
+    monthly_domain_quotas: dict[str, int] = Field(default_factory=dict)
+
+
+class OnboardingResult(BaseModel):
+    account: AccountRecord
+    project: ProjectRecord
+    member: MemberRecord
+    api_key: ApiKeyRecord
+    token: str
+    portal_path: str
+
+
+class StripeCheckoutRequest(BaseModel):
+    account_id: str
+    price_id: str
+    success_url: str
+    cancel_url: str
+    billing_plan: BillingPlan
+    customer_email: str | None = None
+    trial_days: int | None = Field(default=None, ge=1, le=365)
+
+
+class StripeCheckoutResponse(BaseModel):
+    id: str
+    url: str
+    account_id: str
+    billing_plan: BillingPlan
 
 
 def _usage_context(key: ApiKeyRecord | None) -> dict[str, str | None]:
@@ -77,6 +120,8 @@ def _record_extraction(
     metadata: dict | None = None,
 ) -> ExtractionRecord:
     context = _usage_context(key)
+    metadata = metadata or {}
+    failure_class = classify_failure(error, confidence=confidence, metadata=metadata)
     return store.record_extraction(
         ExtractionCreate(
             kind=kind,
@@ -90,7 +135,9 @@ def _record_extraction(
             product_count=product_count,
             payload=payload,
             error=error,
-            metadata=metadata or {},
+            failure_class=failure_class,
+            recommendation=recommendation_for_failure(failure_class),
+            metadata=metadata,
         )
     )
 
@@ -224,6 +271,25 @@ def _portal_href(path: str, token_query: str) -> str:
     return f"{path}{token_query}"
 
 
+def _recent_issues(
+    runs: Sequence[JobRun],
+    extractions: Sequence[ExtractionRecord],
+    limit: int = 20,
+) -> list[dict]:
+    issues = [issue for run in runs for issue in [failed_run_issue(run)] if issue]
+    issues.extend(issue for record in extractions for issue in [failed_extraction_issue(record)] if issue)
+    return sorted(issues, key=lambda item: str(item.get("created_at") or ""), reverse=True)[:limit]
+
+
+def _failure_summary(issues: Sequence[dict]) -> list[list[object]]:
+    counts: Counter[tuple[str, str]] = Counter()
+    for issue in issues:
+        failure_class = str(issue.get("failure_class") or "unknown")
+        domain = str(issue.get("domain") or "job-run")
+        counts[(failure_class, domain)] += 1
+    return [[_esc(failure_class), _esc(domain), _esc(count)] for (failure_class, domain), count in counts.most_common()]
+
+
 def _build_monitoring_overview(
     store: JobStore,
     key: ApiKeyRecord | None,
@@ -339,6 +405,45 @@ def list_members_endpoint(account_id: str, limit: int = 100, store: JobStore = D
     return store.list_members(account_id=account_id, limit=limit)
 
 
+@app.post("/v1/onboarding", response_model=OnboardingResult, dependencies=[Depends(require_admin_access)])
+def onboarding_endpoint(request: OnboardingRequest, store: JobStore = Depends(get_job_store)) -> OnboardingResult:
+    account = store.create_account(
+        AccountCreate(
+            name=request.account_name,
+            owner=request.owner_email,
+            billing_plan=request.billing_plan,
+            status=request.account_status,
+        )
+    )
+    project = store.create_project(
+        account.id,
+        ProjectCreate(name=request.project_name, slug=request.project_slug),
+    )
+    member = store.create_member(
+        account.id,
+        MemberCreate(email=request.owner_email, role=request.member_role, name=request.member_name),
+    )
+    key_result = store.create_api_key(
+        ApiKeyCreate(
+            name=request.api_key_name,
+            owner=request.owner_email,
+            account_id=account.id,
+            project_id=project.id,
+            scopes=request.scopes,
+            billing_plan=request.billing_plan,
+            monthly_domain_quotas=request.monthly_domain_quotas,
+        )
+    )
+    return OnboardingResult(
+        account=account,
+        project=project,
+        member=member,
+        api_key=key_result.key,
+        token=key_result.token,
+        portal_path=f"/portal?api_key={key_result.token}",
+    )
+
+
 @app.get("/dashboard", response_class=HTMLResponse, dependencies=[Depends(require_admin_access)])
 def dashboard(request: Request, store: JobStore = Depends(get_job_store)) -> HTMLResponse:
     accounts = store.list_accounts(limit=50)
@@ -350,6 +455,7 @@ def dashboard(request: Request, store: JobStore = Depends(get_job_store)) -> HTM
     active_jobs = sum(1 for job in jobs if job.status == JobStatus.active)
     failed_runs = sum(1 for run in runs if str(run.status) == "RunStatus.failed" or run.status.value == "failed")
     failed_extractions = sum(1 for record in extractions if record.status == ExtractionStatus.failed)
+    issues = _recent_issues(runs, extractions, limit=20)
 
     token_query = _dashboard_token_query(request)
     account_rows = [
@@ -410,6 +516,18 @@ def dashboard(request: Request, store: JobStore = Depends(get_job_store)) -> HTM
         ]
         for record in extractions[:12]
     ]
+    issue_rows = [
+        [
+            _esc(issue.get("source")),
+            _esc(issue.get("failure_class")),
+            _esc(issue.get("domain") or issue.get("job_id")),
+            _esc(issue.get("account_id")),
+            _esc(issue.get("project_id")),
+            f"<span class='danger'>{_esc(issue.get('error'))}</span>",
+            _esc(issue.get("recommendation")),
+        ]
+        for issue in issues[:12]
+    ]
 
     content = f"""
     <h1>Dashboard</h1>
@@ -423,6 +541,10 @@ def dashboard(request: Request, store: JobStore = Depends(get_job_store)) -> HTM
     </section>
     <h2>Accounts</h2>
     {_table(["ID", "Name", "Owner", "Plan", "Status", "Updated"], account_rows)}
+    <h2>Failure Triage</h2>
+    {_table(["Class", "Domain", "Count"], _failure_summary(issues))}
+    <h2>Recent Issues</h2>
+    {_table(["Source", "Class", "Domain/Job", "Account", "Project", "Error", "Recommendation"], issue_rows)}
     <h2>Recent Extractions</h2>
     {_table(["ID", "Kind", "Status", "Account", "Project", "URL", "Confidence", "Created"], extraction_rows)}
     <h2>Recent Jobs</h2>
@@ -449,6 +571,7 @@ def account_dashboard(account_id: str, request: Request, store: JobStore = Depen
     api_keys = store.list_api_keys(limit=50, account_id=account.id)
     extractions = store.list_extractions(limit=50, account_id=account.id)
     usage = store.usage_summary(account_id=account.id)
+    issues = _recent_issues(runs, extractions, limit=20)
 
     token_query = _dashboard_token_query(request)
     project_rows = [[f"<code>{_esc(project.id)}</code>", _esc(project.name), _esc(project.slug), _esc(project.updated_at)] for project in projects]
@@ -458,6 +581,7 @@ def account_dashboard(account_id: str, request: Request, store: JobStore = Depen
     key_rows = [[f"<code>{_esc(key.id)}</code>", _esc(key.name), _esc(key.project_id), _esc(key.billing_plan.value), _esc("disabled" if key.disabled else "active")] for key in api_keys]
     extraction_rows = [[f"<a href='/dashboard/extractions/{_esc(record.id)}{token_query}'><code>{_esc(record.id)}</code></a>", _esc(record.kind.value), _esc(record.status.value), _esc(record.project_id), _esc(record.url), _esc(record.confidence), _esc(record.created_at)] for record in extractions]
     usage_rows = [[_esc(item.metric.value), _esc(item.quantity)] for item in usage.items]
+    issue_rows = [[_esc(issue.get("source")), _esc(issue.get("failure_class")), _esc(issue.get("domain") or issue.get("job_id")), f"<span class='danger'>{_esc(issue.get('error'))}</span>", _esc(issue.get("recommendation"))] for issue in issues]
 
     content = f"""
     <p><a href="/dashboard{token_query}">Dashboard</a></p>
@@ -472,6 +596,8 @@ def account_dashboard(account_id: str, request: Request, store: JobStore = Depen
     {_table(["ID", "Name", "Slug", "Updated"], project_rows)}
     <h2>Members</h2>
     {_table(["Email", "Role", "Name", "Updated"], member_rows)}
+    <h2>Recent Issues</h2>
+    {_table(["Source", "Class", "Domain/Job", "Error", "Recommendation"], issue_rows)}
     <h2>Extractions</h2>
     {_table(["ID", "Kind", "Status", "Project", "URL", "Confidence", "Created"], extraction_rows)}
     <h2>Jobs</h2>
@@ -504,6 +630,8 @@ def extraction_dashboard(extraction_id: str, request: Request, store: JobStore =
         ["Confidence", _esc(record.confidence)],
         ["Product Count", _esc(record.product_count)],
         ["Error", f"<span class='danger'>{_esc(record.error)}</span>" if record.error else ""],
+        ["Failure Class", _esc(record.failure_class.value if record.failure_class else None)],
+        ["Recommendation", _esc(record.recommendation)],
         ["Created", _esc(record.created_at)],
     ]
     product_rows = [
@@ -537,6 +665,7 @@ def customer_portal(request: Request, store: JobStore = Depends(get_job_store)) 
     usage = store.usage_summary(account_id=account_id, project_id=project_id)
     billing = billing_usage_endpoint(key)
     monitoring = _build_monitoring_overview(store, key, limit=100)
+    issues = _recent_issues(runs, extractions, limit=20)
     target_rows = [
         [
             _esc(target.url),
@@ -603,6 +732,16 @@ def customer_portal(request: Request, store: JobStore = Depends(get_job_store)) 
         ["Extractions", f"<a href='{_portal_href('/portal/export/extractions', token_query)}'>JSON</a>"],
         ["Usage events", f"<a href='{_portal_href('/portal/export/usage', token_query)}'>JSON</a>"],
     ]
+    issue_rows = [
+        [
+            _esc(issue.get("source")),
+            _esc(issue.get("failure_class")),
+            _esc(issue.get("domain") or issue.get("job_id")),
+            f"<span class='danger'>{_esc(issue.get('error'))}</span>",
+            _esc(issue.get("recommendation")),
+        ]
+        for issue in issues[:10]
+    ]
     content = f"""
     <h1>Project Overview</h1>
     <section class="grid">
@@ -614,6 +753,7 @@ def customer_portal(request: Request, store: JobStore = Depends(get_job_store)) 
       <div class="metric">Usage events<strong>{usage.total_quantity}</strong></div>
       <div class="metric">Alert rules<strong>{monitoring.rule_count}</strong></div>
       <div class="metric">Rendered targets<strong>{monitoring.render_target_count}</strong></div>
+      <div class="metric">Recent issues<strong>{len(issues)}</strong></div>
     </section>
     <section class="panel">
       <strong>Account</strong> <code>{_esc(account_id)}</code>
@@ -622,6 +762,8 @@ def customer_portal(request: Request, store: JobStore = Depends(get_job_store)) 
     </section>
     <h2>Monitored Products</h2>
     {_table(["URL", "Job", "Status", "Render", "Tags", "Next Run", "Issue"], target_rows)}
+    <h2>Recent Issues</h2>
+    {_table(["Source", "Class", "Domain/Job", "Error", "Recommendation"], issue_rows)}
     <h2>Monitoring Jobs</h2>
     {_table(["ID", "Name", "Status", "Schedule", "Interval", "Targets", "Rules", "Next Run"], job_rows)}
     <h2>Recent Runs</h2>
@@ -683,6 +825,8 @@ def customer_portal_job(job_id: str, request: Request, store: JobStore = Depends
         ["Next run", _esc(job.next_run_at)],
         ["Last run", _esc(job.last_run_at)],
         ["Last error", f"<span class='danger'>{_esc(job.last_error)}</span>" if job.last_error else ""],
+        ["Last failure class", _esc(classify_failure(job.last_error).value if classify_failure(job.last_error) else None)],
+        ["Recommendation", _esc(recommendation_for_failure(classify_failure(job.last_error)))],
         ["Tags", _esc(", ".join(job.tags))],
         ["Retries", _esc(job.max_retries)],
         ["Retry backoff seconds", _esc(job.retry_backoff_seconds)],
@@ -721,6 +865,8 @@ def customer_portal_run(run_id: str, request: Request, store: JobStore = Depends
         ["Finished", _esc(run.finished_at)],
         ["Created", _esc(run.created_at)],
         ["Error", f"<span class='danger'>{_esc(run.error)}</span>" if run.error else ""],
+        ["Failure Class", _esc(run.failure_class.value if run.failure_class else None)],
+        ["Recommendation", _esc(run.recommendation)],
     ]
     content = f"""
     <p><a href="{_portal_href('/portal', token_query)}">Overview</a></p>
@@ -749,6 +895,8 @@ def customer_portal_extraction(extraction_id: str, request: Request, store: JobS
         ["Product count", _esc(record.product_count)],
         ["Created", _esc(record.created_at)],
         ["Error", f"<span class='danger'>{_esc(record.error)}</span>" if record.error else ""],
+        ["Failure Class", _esc(record.failure_class.value if record.failure_class else None)],
+        ["Recommendation", _esc(record.recommendation)],
     ]
     product_rows = [
         ["Name", _esc(product.get("name"))],
@@ -1018,9 +1166,9 @@ def get_run_endpoint(run_id: str, store: JobStore = Depends(get_job_store), key:
 
 
 @app.post("/v1/worker/tick", response_model=WorkerTickResult)
-def worker_tick_endpoint(limit: int = 25, dry_run: bool = False, deliver: bool = True, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> WorkerTickResult:
+def worker_tick_endpoint(limit: int = 25, dry_run: bool = False, deliver: bool = True, domain_concurrency: int | None = None, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> WorkerTickResult:
     require_scope(key, "worker:write")
-    return MonitoringWorker(store=store).tick(limit=limit, dry_run=dry_run, deliver=deliver)
+    return MonitoringWorker(store=store).tick(limit=limit, dry_run=dry_run, deliver=deliver, domain_concurrency=domain_concurrency)
 
 
 @app.post("/v1/api-keys", response_model=ApiKeyCreateResult, dependencies=[Depends(require_admin_token)])
@@ -1049,6 +1197,37 @@ def billing_usage_endpoint(key: ApiKeyRecord | None = Depends(require_api_key)) 
     return BillingUsageSnapshot(account_id=key.account_id, project_id=key.project_id, api_key_id=key.id, billing_plan=key.billing_plan, period_start=decisions[0].period_start, period_end=decisions[0].period_end, blocked=any(not decision.allowed for decision in decisions), items=[BillingUsageItem(metric=decision.metric, used=decision.used, limit=decision.limit, remaining=decision.remaining) for decision in decisions])
 
 
+@app.post("/v1/billing/stripe/checkout-session", response_model=StripeCheckoutResponse, dependencies=[Depends(require_admin_token)])
+def stripe_checkout_session_endpoint(request: StripeCheckoutRequest, store: JobStore = Depends(get_job_store)) -> StripeCheckoutResponse:
+    account = store.get_account(request.account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found.")
+    secret_key = os.getenv("STRIPE_SECRET_KEY")
+    if not secret_key:
+        raise HTTPException(status_code=503, detail="STRIPE_SECRET_KEY is not configured.")
+    try:
+        session = create_checkout_session(
+            secret_key=secret_key,
+            price_id=request.price_id,
+            success_url=request.success_url,
+            cancel_url=request.cancel_url,
+            account_id=request.account_id,
+            billing_plan=request.billing_plan,
+            customer_email=request.customer_email or account.owner,
+            trial_days=request.trial_days,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Stripe checkout session failed: {exc}") from exc
+    session_id = str(session.get("id") or "")
+    session_url = str(session.get("url") or "")
+    if not session_id or not session_url:
+        raise HTTPException(status_code=502, detail="Stripe checkout session response did not include id and url.")
+    account.metadata["stripe_checkout_session_id"] = session_id
+    account.metadata["stripe_checkout_plan"] = request.billing_plan.value
+    store.save_account(account)
+    return StripeCheckoutResponse(id=session_id, url=session_url, account_id=request.account_id, billing_plan=request.billing_plan)
+
+
 @app.get("/v1/monitoring/overview", response_model=MonitoringOverview)
 def monitoring_overview_endpoint(
     limit: int = 100,
@@ -1058,6 +1237,31 @@ def monitoring_overview_endpoint(
     require_scope(key, "jobs:read")
     require_scope(key, "runs:read")
     return _build_monitoring_overview(store, key, limit=limit)
+
+
+@app.get("/v1/issues")
+def issues_endpoint(
+    limit: int = 50,
+    store: JobStore = Depends(get_job_store),
+    key: ApiKeyRecord | None = Depends(require_api_key),
+) -> dict:
+    require_scope(key, "runs:read")
+    require_scope(key, "extractions:read")
+    account_id = key.account_id if key else None
+    project_id = key.project_id if key else None
+    runs = store.list_runs(limit=limit, account_id=account_id, project_id=project_id)
+    extractions = store.list_extractions(limit=limit, account_id=account_id, project_id=project_id)
+    issues = _recent_issues(runs, extractions, limit=limit)
+    return {
+        "account_id": account_id,
+        "project_id": project_id,
+        "count": len(issues),
+        "summary": [
+            {"failure_class": row[0], "domain": row[1], "count": row[2]}
+            for row in _failure_summary(issues)
+        ],
+        "issues": issues,
+    }
 
 
 @app.get("/v1/dashboard/summary", response_model=DashboardSummary)

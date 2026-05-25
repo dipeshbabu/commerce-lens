@@ -4,8 +4,9 @@ from pathlib import Path
 
 from commercelens.alerts.config import AlertRule, MonitorConfig, MonitorTarget
 from commercelens.alerts.rules import AlertCondition
-from commercelens.jobs.models import ApiKeyCreate, JobStatus, MonitoringJobCreate, MonitoringJobUpdate, ScheduleKind
+from commercelens.jobs.models import ApiKeyCreate, JobStatus, MonitoringJobCreate, MonitoringJobUpdate, RunStatus, ScheduleKind
 from commercelens.jobs.store import JobStore
+from commercelens.jobs.worker import MonitoringWorker
 
 
 def sample_config() -> MonitorConfig:
@@ -70,3 +71,31 @@ def test_api_key_roundtrip(tmp_path: Path) -> None:
     verified = store.verify_api_key(result.token)
     assert verified is not None
     assert verified.name == "local dev"
+
+
+def test_worker_defers_jobs_over_domain_concurrency(monkeypatch, tmp_path: Path) -> None:
+    store = JobStore(tmp_path / "jobs.db")
+    first = store.create_job(MonitoringJobCreate(name="watch one", config=sample_config(), interval_minutes=5))
+    second = store.create_job(MonitoringJobCreate(name="watch two", config=sample_config(), interval_minutes=5))
+    for job in (first, second):
+        job.next_run_at = "2000-01-01T00:00:00+00:00"
+        store.save_job(job)
+
+    def fake_run_monitor_config(*args, **kwargs):
+        class FakeResult:
+            events = []
+            warnings = []
+            delivery_reports = []
+
+            def model_dump(self, **kwargs):
+                return {"events": []}
+
+        return FakeResult()
+
+    monkeypatch.setattr("commercelens.jobs.worker.run_monitor_config", fake_run_monitor_config)
+    result = MonitoringWorker(store=store).tick(limit=10, domain_concurrency=1)
+
+    runs = store.list_runs(limit=10)
+    assert result.succeeded_runs == 1
+    assert result.deferred_runs == 1
+    assert any(run.status == RunStatus.skipped and run.failure_class and run.failure_class.value == "queue_deferred" for run in runs)

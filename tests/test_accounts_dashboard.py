@@ -71,3 +71,29 @@ def test_account_api_and_dashboard(monkeypatch, tmp_path: Path) -> None:
     assert detail_response.status_code == 200
     assert "Competitors" in detail_response.text
     assert "analyst@acme.test" in detail_response.text
+
+
+def test_onboarding_creates_customer_workspace(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("COMMERCELENS_ADMIN_TOKEN", "secret")
+    monkeypatch.setenv("COMMERCELENS_JOBS_DB", str(tmp_path / "jobs.db"))
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/onboarding",
+        headers={"X-Admin-Token": "secret"},
+        json={
+            "account_name": "Acme Retail",
+            "owner_email": "owner@acme.test",
+            "project_name": "Competitor Watch",
+            "billing_plan": "team",
+            "monthly_domain_quotas": {"example.com": 500},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["account"]["name"] == "Acme Retail"
+    assert payload["project"]["name"] == "Competitor Watch"
+    assert payload["member"]["email"] == "owner@acme.test"
+    assert payload["api_key"]["billing_plan"] == "team"
+    assert payload["portal_path"].startswith("/portal?api_key=cl_")

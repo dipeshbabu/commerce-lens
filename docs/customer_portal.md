@@ -36,6 +36,7 @@ The overview page shows:
 - monitored product URLs
 - active jobs and schedule state
 - recent job runs and alert activity
+- recent failure classes and recommended next actions
 - recent product/listing extractions
 - usage totals
 - quota usage and remaining budget
@@ -49,6 +50,24 @@ Detail pages are available for:
 
 All detail pages re-check the API key and tenant scope before loading records.
 Records from another account or project return `404`.
+
+## Failure Triage
+
+The portal classifies failed runs and extractions into stable classes:
+
+- `timeout`
+- `blocked`
+- `render_required`
+- `parser_low_confidence`
+- `network_error`
+- `invalid_url`
+- `rate_limited`
+- `quota_exceeded`
+- `queue_deferred`
+- `unknown`
+
+Use `/v1/issues` with the same tenant API key to fetch the same triage data as
+JSON for customer-facing UI or support workflows.
 
 ## Exports
 

@@ -104,12 +104,13 @@ def test_monitoring_overview_and_customer_portal(monkeypatch, tmp_path) -> None:
     run = store.save_run(
         JobRun(
             job_id=job.id,
-            status=RunStatus.succeeded,
+            status=RunStatus.failed,
             account_id="acct_demo",
             project_id="proj_demo",
             event_count=2,
             delivery_count=1,
             warning_count=0,
+            error="competitor.example timed out after 20 seconds",
             result={"events": [{"change_type": "price_drop", "product": "Example Product"}]},
         )
     )
@@ -132,6 +133,7 @@ def test_monitoring_overview_and_customer_portal(monkeypatch, tmp_path) -> None:
     extraction_detail = client.get(f"/portal/extractions/{extraction.id}?api_key={key.token}")
     hidden_detail = client.get(f"/portal/jobs/{other_job.id}?api_key={key.token}")
     export_response = client.get(f"/portal/export/jobs?api_key={key.token}")
+    issues_response = client.get("/v1/issues", headers={"X-API-Key": key.token})
 
     assert overview.status_code == 200
     assert overview.json()["target_count"] == 1
@@ -139,6 +141,8 @@ def test_monitoring_overview_and_customer_portal(monkeypatch, tmp_path) -> None:
     assert portal.status_code == 200
     assert "customer portal" in portal.text
     assert "competitor watch" in portal.text
+    assert "Recent Issues" in portal.text
+    assert "timeout" in portal.text
     assert "Monitoring Jobs" in portal.text
     assert "/portal/export/jobs" in portal.text
     assert job_detail.status_code == 200
@@ -146,8 +150,11 @@ def test_monitoring_overview_and_customer_portal(monkeypatch, tmp_path) -> None:
     assert "price drop" in job_detail.text
     assert run_detail.status_code == 200
     assert "price_drop" in run_detail.text
+    assert "Failure Class" in run_detail.text
     assert extraction_detail.status_code == 200
     assert "Example Product" in extraction_detail.text
     assert hidden_detail.status_code == 404
     assert export_response.status_code == 200
     assert export_response.json()["items"][0]["name"] == "competitor watch"
+    assert issues_response.status_code == 200
+    assert issues_response.json()["issues"][0]["failure_class"] == "timeout"

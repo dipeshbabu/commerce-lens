@@ -14,6 +14,7 @@ from commercelens.jobs.models import (
     ExtractionKind,
     ExtractionRecord,
     ExtractionStatus,
+    FailureClass,
     JobRun,
     JobStatus,
     MemberCreate,
@@ -31,6 +32,7 @@ from commercelens.jobs.models import (
     UsageSummaryItem,
     utc_now_iso,
 )
+from commercelens.jobs.failures import classify_failure, recommendation_for_failure
 from commercelens.jobs.migrations import run_postgres_migrations
 from commercelens.jobs.store import duration_ms
 
@@ -145,6 +147,10 @@ class PostgresJobStore:
 
     def record_extraction(self, request: ExtractionCreate) -> ExtractionRecord:
         record = ExtractionRecord(**request.model_dump())
+        if record.error and record.failure_class is None:
+            record.failure_class = classify_failure(record.error, confidence=record.confidence, metadata=record.metadata)
+        if record.failure_class and record.recommendation is None:
+            record.recommendation = recommendation_for_failure(record.failure_class)
         with self._connect() as conn:
             conn.execute("""INSERT INTO extraction_records (id, payload, kind, status, url, account_id, project_id, owner, api_key_id, confidence, product_count, created_at) VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""", (record.id, record.model_dump_json(exclude_none=True), record.kind.value, record.status.value, record.url, record.account_id, record.project_id, record.owner, record.api_key_id, record.confidence, record.product_count, record.created_at))
         return record
@@ -337,11 +343,28 @@ class PostgresJobStore:
         run.finished_at = utc_now_iso()
         run.duration_ms = duration_ms(run.started_at, run.finished_at)
         run.error = error
+        run.failure_class = classify_failure(error)
+        run.recommendation = recommendation_for_failure(run.failure_class)
         self.save_run(run)
         self.record_usage(UsageEvent(metric=UsageMetric.job_run, account_id=run.account_id, project_id=run.project_id, owner=run.owner, job_id=run.job_id, run_id=run.id, metadata={"status": "failed", "error": error, "duration_ms": run.duration_ms}))
         job = self.get_job(run.job_id)
         if job:
             job.last_error = error
+            job.next_run_at = self.compute_retry_run(job, run.attempt) if job.status == JobStatus.active else None
+            self.save_job(job)
+        return run
+
+    def defer_run(self, run: JobRun, reason: str) -> JobRun:
+        run.status = RunStatus.skipped
+        run.finished_at = utc_now_iso()
+        run.duration_ms = duration_ms(run.started_at, run.finished_at)
+        run.error = reason
+        run.failure_class = FailureClass.queue_deferred
+        run.recommendation = recommendation_for_failure(run.failure_class)
+        self.save_run(run)
+        job = self.get_job(run.job_id)
+        if job:
+            job.last_error = reason
             job.next_run_at = self.compute_retry_run(job, run.attempt) if job.status == JobStatus.active else None
             self.save_job(job)
         return run

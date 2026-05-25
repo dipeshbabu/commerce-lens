@@ -55,6 +55,19 @@ class ExtractionStatus(str, Enum):
     failed = "failed"
 
 
+class FailureClass(str, Enum):
+    blocked = "blocked"
+    invalid_url = "invalid_url"
+    network_error = "network_error"
+    parser_low_confidence = "parser_low_confidence"
+    queue_deferred = "queue_deferred"
+    quota_exceeded = "quota_exceeded"
+    rate_limited = "rate_limited"
+    render_required = "render_required"
+    timeout = "timeout"
+    unknown = "unknown"
+
+
 class BillingPlan(str, Enum):
     free = "free"
     developer = "developer"
@@ -92,6 +105,8 @@ class ExtractionCreate(BaseModel):
     product_count: int | None = None
     payload: dict[str, Any] | None = None
     error: str | None = None
+    failure_class: FailureClass | None = None
+    recommendation: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -108,6 +123,8 @@ class ExtractionRecord(BaseModel):
     product_count: int | None = None
     payload: dict[str, Any] | None = None
     error: str | None = None
+    failure_class: FailureClass | None = None
+    recommendation: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: str = Field(default_factory=utc_now_iso)
 
@@ -225,6 +242,8 @@ class JobRun(BaseModel):
     delivery_count: int = 0
     warning_count: int = 0
     error: str | None = None
+    failure_class: FailureClass | None = None
+    recommendation: str | None = None
     result: dict[str, Any] | None = None
     created_at: str = Field(default_factory=utc_now_iso)
 
@@ -236,6 +255,7 @@ class WorkerTickResult(BaseModel):
     succeeded_runs: int = 0
     failed_runs: int = 0
     skipped_runs: int = 0
+    deferred_runs: int = 0
     run_ids: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 

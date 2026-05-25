@@ -58,7 +58,11 @@ CommerceLens is currently in early v0.9 commercial product development. The curr
 - Usage event logging and usage summaries
 - API-key monthly domain quotas
 - Stripe subscription webhook plan sync
+- Stripe Checkout Session creation for subscription onboarding
 - Customer-facing portal for jobs, runs, extractions, usage, quotas, and JSON exports
+- Failure classification and triage recommendations for runs and extractions
+- One-command customer onboarding for account, project, owner, API key, and portal URL
+- Per-domain worker concurrency controls
 - SQLite or Postgres job/run/API-key/usage store
 - Docker and docker-compose deployment files
 - Python SDK
@@ -339,19 +343,30 @@ commercelens run-job job_xxxxxxxxxxxxxxxx --dry-run
 Execute due jobs once:
 
 ```bash
-commercelens worker-tick --dry-run
+commercelens worker-tick --dry-run --domain-concurrency 1
 ```
 
 Run the worker loop:
 
 ```bash
-commercelens worker --poll-seconds 60
+commercelens worker --poll-seconds 60 --domain-concurrency 2
 ```
 
 Create an API key for hosted deployments:
 
 ```bash
 commercelens create-api-key --name "local dev" --account-id acct_demo --project-id proj_default
+```
+
+Create a complete customer workspace:
+
+```bash
+commercelens onboard-customer \
+  --account-name "Acme Retail" \
+  --owner-email ops@acme.test \
+  --project-name "Competitor Watch" \
+  --billing-plan team \
+  --domain-quota example.com=500
 ```
 
 Create a key with monthly domain budgets:
@@ -581,6 +596,13 @@ curl http://127.0.0.1:8000/v1/dashboard/summary \
   -H "X-API-Key: cl_REPLACE_WITH_TOKEN"
 ```
 
+Fetch customer-visible failure triage:
+
+```bash
+curl http://127.0.0.1:8000/v1/issues \
+  -H "X-API-Key: cl_REPLACE_WITH_TOKEN"
+```
+
 Open the customer portal:
 
 ```text
@@ -589,6 +611,21 @@ http://127.0.0.1:8000/portal?api_key=cl_REPLACE_WITH_TOKEN
 
 The portal provides tenant-scoped job, run, extraction, usage, quota, alert
 activity, and JSON export views. See `docs/customer_portal.md`.
+
+Create a Stripe Checkout Session for an account:
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/billing/stripe/checkout-session \
+  -H "X-Admin-Token: $COMMERCELENS_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "account_id": "acct_demo",
+    "price_id": "price_REPLACE",
+    "success_url": "https://app.example.com/billing/success",
+    "cancel_url": "https://app.example.com/billing/cancel",
+    "billing_plan": "team"
+  }'
+```
 
 Match product records:
 
