@@ -134,6 +134,7 @@ def test_monitoring_overview_and_customer_portal(monkeypatch, tmp_path) -> None:
     hidden_detail = client.get(f"/portal/jobs/{other_job.id}?api_key={key.token}")
     export_response = client.get(f"/portal/export/jobs?api_key={key.token}")
     issues_response = client.get("/v1/issues", headers={"X-API-Key": key.token})
+    metrics_response = client.get("/v1/ops/failure-metrics")
 
     assert overview.status_code == 200
     assert overview.json()["target_count"] == 1
@@ -158,3 +159,5 @@ def test_monitoring_overview_and_customer_portal(monkeypatch, tmp_path) -> None:
     assert export_response.json()["items"][0]["name"] == "competitor watch"
     assert issues_response.status_code == 200
     assert issues_response.json()["issues"][0]["failure_class"] == "timeout"
+    assert metrics_response.status_code == 200
+    assert metrics_response.json()["by_failure_class"]["timeout"] == 1

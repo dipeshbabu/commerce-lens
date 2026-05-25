@@ -3,7 +3,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from commercelens.api.main import app
-from commercelens.jobs.models import AccountCreate, MemberCreate, MemberRole, ProjectCreate
+from commercelens.jobs.models import AccountCreate, AccountStatus, ApiKeyCreate, MemberCreate, MemberRole, ProjectCreate
 from commercelens.jobs.store import JobStore
 
 
@@ -68,9 +68,12 @@ def test_account_api_and_dashboard(monkeypatch, tmp_path: Path) -> None:
 
     assert dashboard_response.status_code == 200
     assert "Acme Retail" in dashboard_response.text
+    assert "Onboard Customer" in dashboard_response.text
     assert detail_response.status_code == 200
     assert "Competitors" in detail_response.text
     assert "analyst@acme.test" in detail_response.text
+    assert "Suspend Account" in detail_response.text
+    assert "Create Checkout Session" in detail_response.text
 
 
 def test_onboarding_creates_customer_workspace(monkeypatch, tmp_path: Path) -> None:
@@ -97,3 +100,38 @@ def test_onboarding_creates_customer_workspace(monkeypatch, tmp_path: Path) -> N
     assert payload["member"]["email"] == "owner@acme.test"
     assert payload["api_key"]["billing_plan"] == "team"
     assert payload["portal_path"].startswith("/portal?api_key=cl_")
+
+
+def test_suspended_account_blocks_api_key(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("COMMERCELENS_REQUIRE_API_KEY", "true")
+    monkeypatch.setenv("COMMERCELENS_ADMIN_TOKEN", "secret")
+    monkeypatch.setenv("COMMERCELENS_JOBS_DB", str(tmp_path / "jobs.db"))
+    store = JobStore(tmp_path / "jobs.db")
+    account = store.create_account(AccountCreate(name="Acme", status=AccountStatus.suspended))
+    key = store.create_api_key(ApiKeyCreate(name="customer", account_id=account.id, scopes=["*"]))
+    client = TestClient(app)
+
+    response = client.get("/v1/usage/summary", headers={"X-API-Key": key.token})
+    portal = client.get(f"/portal?api_key={key.token}")
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Account is suspended."
+    assert portal.status_code == 403
+
+
+def test_dashboard_account_status_control(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("COMMERCELENS_ADMIN_TOKEN", "secret")
+    monkeypatch.setenv("COMMERCELENS_JOBS_DB", str(tmp_path / "jobs.db"))
+    store = JobStore(tmp_path / "jobs.db")
+    account = store.create_account(AccountCreate(name="Acme"))
+    client = TestClient(app)
+
+    response = client.post(
+        f"/dashboard/accounts/{account.id}/status?admin_token=secret&status_value=suspended",
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    updated = JobStore(tmp_path / "jobs.db").get_account(account.id)
+    assert updated is not None
+    assert updated.status == AccountStatus.suspended

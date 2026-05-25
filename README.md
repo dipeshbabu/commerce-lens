@@ -156,6 +156,15 @@ python scripts/smoke_deploy.py \
   --admin-token "$ADMIN_TOKEN"
 ```
 
+To include Stripe Checkout in the hosted beta smoke, pass a Stripe price ID:
+
+```bash
+python scripts/smoke_deploy.py \
+  --base-url https://YOUR-API.onrender.com \
+  --admin-token "$ADMIN_TOKEN" \
+  --stripe-price-id price_REPLACE
+```
+
 ## Python SDK
 
 Extract a product page:
@@ -601,6 +610,13 @@ Fetch customer-visible failure triage:
 ```bash
 curl http://127.0.0.1:8000/v1/issues \
   -H "X-API-Key: cl_REPLACE_WITH_TOKEN"
+```
+
+Fetch operator failure counters:
+
+```bash
+curl http://127.0.0.1:8000/v1/ops/failure-metrics \
+  -H "X-Admin-Token: $COMMERCELENS_ADMIN_TOKEN"
 ```
 
 Open the customer portal:

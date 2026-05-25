@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import os
 import json
+import logging
+import time
 from collections import Counter
 from html import escape
 from typing import Sequence
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode
+from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from commercelens.alerts.runner import MonitorRunResult, run_monitor_config, run_monitor_config_file
-from commercelens.api.auth import get_job_store, require_admin_access, require_admin_token, require_api_key
+from commercelens.api.auth import get_job_store, require_account_active, require_admin_access, require_admin_token, require_api_key
 from commercelens.api.domain_limits import require_domain_quota, url_domain
 from commercelens.api.quota import quota_decision, require_quota, require_scope
 from commercelens.connectors.datasets import DatasetLoadResult
@@ -52,8 +55,29 @@ from commercelens.storage.price_store import PriceSnapshotStore, ProductSnapshot
 from commercelens.version import __version__
 
 API_VERSION = __version__
+LOGGER = logging.getLogger("commercelens.api")
 
 app = FastAPI(title="CommerceLens API", description="Commercial product, catalog, monitoring, alerting, matching, and price intelligence extraction for developers.", version=API_VERSION)
+
+
+@app.middleware("http")
+async def request_context_middleware(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or f"req_{uuid4().hex[:16]}"
+    started = time.perf_counter()
+    response = await call_next(request)
+    duration_ms = round((time.perf_counter() - started) * 1000, 2)
+    response.headers["X-Request-ID"] = request_id
+    LOGGER.info(
+        "request_complete",
+        extra={
+            "request_id": request_id,
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": response.status_code,
+            "duration_ms": duration_ms,
+        },
+    )
+    return response
 
 
 class OnboardingRequest(BaseModel):
@@ -77,6 +101,14 @@ class OnboardingResult(BaseModel):
     api_key: ApiKeyRecord
     token: str
     portal_path: str
+
+
+class AccountUpdate(BaseModel):
+    name: str | None = None
+    owner: str | None = None
+    billing_plan: BillingPlan | None = None
+    status: AccountStatus | None = None
+    metadata: dict | None = None
 
 
 class StripeCheckoutRequest(BaseModel):
@@ -157,6 +189,15 @@ def _dashboard_token_query(request: Request) -> str:
     return "?" + urlencode({"admin_token": token}) if token else ""
 
 
+def _dashboard_action(path: str, request: Request, **params: object) -> str:
+    token = request.query_params.get("admin_token")
+    query = {key: value for key, value in params.items() if value is not None}
+    if token:
+        query["admin_token"] = token
+    suffix = "?" + urlencode(query) if query else ""
+    return f"{path}{suffix}"
+
+
 def _portal_key_query(request: Request) -> str:
     token = request.query_params.get("api_key")
     return "?" + urlencode({"api_key": token}) if token else ""
@@ -169,6 +210,7 @@ def _require_portal_key(request: Request, store: JobStore) -> ApiKeyRecord:
     key = store.verify_api_key(token)
     if not key:
         raise HTTPException(status_code=401, detail="Invalid API key.")
+    require_account_active(store, key)
     require_scope(key, "usage:read")
     require_scope(key, "jobs:read")
     require_scope(key, "runs:read")
@@ -197,10 +239,15 @@ def _dashboard_shell(title: str, content: str, token_query: str = "") -> str:
     th, td {{ padding: 10px 12px; border-bottom: 1px solid #e5e7eb; text-align: left; vertical-align: top; font-size: 14px; }}
     th {{ background: #f9fafb; color: #4b5563; font-weight: 600; }}
     tr:last-child td {{ border-bottom: 0; }}
+    form {{ background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px; margin: 12px 0; display: grid; gap: 10px; grid-template-columns: repeat(3, minmax(0, 1fr)); }}
+    label {{ display: grid; gap: 4px; font-size: 13px; color: #4b5563; }}
+    input, select {{ font: inherit; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 6px; }}
+    button {{ font: inherit; padding: 9px 12px; border: 1px solid #111827; border-radius: 6px; background: #111827; color: white; cursor: pointer; align-self: end; }}
     code {{ background: #eef2ff; padding: 2px 5px; border-radius: 4px; }}
     .muted {{ color: #6b7280; }}
     .danger {{ color: #b91c1c; }}
-    @media (max-width: 900px) {{ .grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} main {{ padding: 18px; }} }}
+    @media (max-width: 900px) {{ .grid, form {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} main {{ padding: 18px; }} }}
+    @media (max-width: 560px) {{ form {{ grid-template-columns: 1fr; }} }}
   </style>
 </head>
 <body>
@@ -269,6 +316,12 @@ def _pre_json(value: object) -> str:
 
 def _portal_href(path: str, token_query: str) -> str:
     return f"{path}{token_query}"
+
+
+async def _urlencoded_form(request: Request) -> dict[str, str]:
+    raw = (await request.body()).decode("utf-8")
+    parsed = parse_qs(raw, keep_blank_values=True)
+    return {key: values[-1] for key, values in parsed.items() if values}
 
 
 def _recent_issues(
@@ -346,14 +399,22 @@ def health() -> dict[str, str]:
 @app.get("/ready")
 def readiness(store: JobStore = Depends(get_job_store)) -> dict[str, str | bool]:
     store.usage_summary()
+    backend = os.getenv("COMMERCELENS_STORE_BACKEND", "sqlite").lower()
+    stripe_secret_configured = bool(os.getenv("STRIPE_SECRET_KEY"))
+    stripe_webhook_configured = bool(os.getenv("STRIPE_WEBHOOK_SECRET"))
     return {
         "status": "ready",
         "service": "commercelens",
         "version": API_VERSION,
-        "store_backend": os.getenv("COMMERCELENS_STORE_BACKEND", "sqlite").lower(),
+        "store_backend": backend,
+        "store_reachable": True,
         "api_key_required": os.getenv("COMMERCELENS_REQUIRE_API_KEY", "false").lower()
         in {"1", "true", "yes"},
         "admin_token_configured": bool(os.getenv("COMMERCELENS_ADMIN_TOKEN")),
+        "stripe_secret_configured": stripe_secret_configured,
+        "stripe_webhook_configured": stripe_webhook_configured,
+        "domain_concurrency_configured": bool(os.getenv("COMMERCELENS_DOMAIN_CONCURRENCY_LIMIT")),
+        "migrations_checked": backend == "postgres",
     }
 
 
@@ -373,6 +434,18 @@ def get_account_endpoint(account_id: str, store: JobStore = Depends(get_job_stor
     if not account:
         raise HTTPException(status_code=404, detail="Account not found.")
     return account
+
+
+@app.patch("/v1/accounts/{account_id}", response_model=AccountRecord, dependencies=[Depends(require_admin_access)])
+def update_account_endpoint(account_id: str, request: AccountUpdate, store: JobStore = Depends(get_job_store)) -> AccountRecord:
+    account = store.get_account(account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found.")
+    updates = request.model_dump(exclude_unset=True)
+    for key, value in updates.items():
+        if value is not None:
+            setattr(account, key, value)
+    return store.save_account(account)
 
 
 @app.post("/v1/accounts/{account_id}/projects", response_model=ProjectRecord, dependencies=[Depends(require_admin_access)])
@@ -442,6 +515,75 @@ def onboarding_endpoint(request: OnboardingRequest, store: JobStore = Depends(ge
         token=key_result.token,
         portal_path=f"/portal?api_key={key_result.token}",
     )
+
+
+@app.post("/dashboard/onboarding", response_class=HTMLResponse, dependencies=[Depends(require_admin_access)])
+async def dashboard_onboarding(request: Request, store: JobStore = Depends(get_job_store)) -> HTMLResponse:
+    form = await _urlencoded_form(request)
+    domain_quotas = {}
+    raw_domain_quota = form.get("domain_quota", "").strip()
+    if raw_domain_quota:
+        for item in raw_domain_quota.split(","):
+            if "=" in item:
+                domain, limit = item.split("=", 1)
+                domain_quotas[domain.strip().lower()] = int(limit.strip())
+    result = onboarding_endpoint(
+        OnboardingRequest(
+            account_name=form.get("account_name", "New Customer"),
+            owner_email=form.get("owner_email", ""),
+            project_name=form.get("project_name", "Default"),
+            billing_plan=BillingPlan(form.get("billing_plan", BillingPlan.free.value)),
+            monthly_domain_quotas=domain_quotas,
+        ),
+        store=store,
+    )
+    token_query = _dashboard_token_query(request)
+    content = f"""
+    <p><a href="/dashboard{token_query}">Dashboard</a></p>
+    <h1>Customer Onboarded</h1>
+    {_table(["Field", "Value"], [
+        ["Account", f"<a href='/dashboard/accounts/{_esc(result.account.id)}{token_query}'><code>{_esc(result.account.id)}</code></a>"],
+        ["Project", f"<code>{_esc(result.project.id)}</code>"],
+        ["Owner", _esc(result.member.email)],
+        ["API Key", f"<code>{_esc(result.api_key.id)}</code>"],
+        ["Portal", f"<code>{_esc(result.portal_path)}</code>"],
+    ])}
+    """
+    return HTMLResponse(_dashboard_shell("Customer Onboarded", content, token_query=token_query))
+
+
+@app.post("/dashboard/accounts/{account_id}/status", dependencies=[Depends(require_admin_access)])
+def dashboard_account_status(account_id: str, status_value: AccountStatus, request: Request, store: JobStore = Depends(get_job_store)) -> RedirectResponse:
+    account = update_account_endpoint(account_id, AccountUpdate(status=status_value), store=store)
+    return RedirectResponse(_dashboard_action(f"/dashboard/accounts/{account.id}", request), status_code=303)
+
+
+@app.post("/dashboard/accounts/{account_id}/checkout", response_class=HTMLResponse, dependencies=[Depends(require_admin_access)])
+async def dashboard_checkout(account_id: str, request: Request, store: JobStore = Depends(get_job_store)) -> HTMLResponse:
+    form = await _urlencoded_form(request)
+    response = stripe_checkout_session_endpoint(
+        StripeCheckoutRequest(
+            account_id=account_id,
+            price_id=form.get("price_id", ""),
+            success_url=form.get("success_url", ""),
+            cancel_url=form.get("cancel_url", ""),
+            billing_plan=BillingPlan(form.get("billing_plan", BillingPlan.team.value)),
+            customer_email=form.get("customer_email") or None,
+            trial_days=int(form["trial_days"]) if form.get("trial_days") else None,
+        ),
+        store=store,
+    )
+    token_query = _dashboard_token_query(request)
+    content = f"""
+    <p><a href="/dashboard/accounts/{_esc(account_id)}{token_query}">Account</a></p>
+    <h1>Checkout Session</h1>
+    {_table(["Field", "Value"], [
+        ["Session", f"<code>{_esc(response.id)}</code>"],
+        ["Plan", _esc(response.billing_plan.value)],
+        ["URL", f"<a href='{_esc(response.url)}'>{_esc(response.url)}</a>"],
+    ])}
+    """
+    return HTMLResponse(_dashboard_shell("Checkout Session", content, token_query=token_query))
 
 
 @app.get("/dashboard", response_class=HTMLResponse, dependencies=[Depends(require_admin_access)])
@@ -531,6 +673,15 @@ def dashboard(request: Request, store: JobStore = Depends(get_job_store)) -> HTM
 
     content = f"""
     <h1>Dashboard</h1>
+    <h2>Onboard Customer</h2>
+    <form method="post" action="{_dashboard_action('/dashboard/onboarding', request)}">
+      <label>Account name<input name="account_name" required></label>
+      <label>Owner email<input name="owner_email" type="email" required></label>
+      <label>Project name<input name="project_name" value="Competitor Watch"></label>
+      <label>Plan<select name="billing_plan"><option value="free">free</option><option value="developer">developer</option><option value="team">team</option><option value="enterprise">enterprise</option></select></label>
+      <label>Domain quotas<input name="domain_quota" placeholder="example.com=500,*=100"></label>
+      <button type="submit">Create Workspace</button>
+    </form>
     <section class="grid">
       <div class="metric">Accounts<strong>{len(accounts)}</strong></div>
       <div class="metric">API keys<strong>{len(api_keys)}</strong></div>
@@ -582,6 +733,9 @@ def account_dashboard(account_id: str, request: Request, store: JobStore = Depen
     extraction_rows = [[f"<a href='/dashboard/extractions/{_esc(record.id)}{token_query}'><code>{_esc(record.id)}</code></a>", _esc(record.kind.value), _esc(record.status.value), _esc(record.project_id), _esc(record.url), _esc(record.confidence), _esc(record.created_at)] for record in extractions]
     usage_rows = [[_esc(item.metric.value), _esc(item.quantity)] for item in usage.items]
     issue_rows = [[_esc(issue.get("source")), _esc(issue.get("failure_class")), _esc(issue.get("domain") or issue.get("job_id")), f"<span class='danger'>{_esc(issue.get('error'))}</span>", _esc(issue.get("recommendation"))] for issue in issues]
+    suspend_action = _dashboard_action(f"/dashboard/accounts/{account.id}/status", request, status_value=AccountStatus.suspended.value)
+    reactivate_action = _dashboard_action(f"/dashboard/accounts/{account.id}/status", request, status_value=AccountStatus.active.value)
+    checkout_action = _dashboard_action(f"/dashboard/accounts/{account.id}/checkout", request)
 
     content = f"""
     <p><a href="/dashboard{token_query}">Dashboard</a></p>
@@ -592,6 +746,23 @@ def account_dashboard(account_id: str, request: Request, store: JobStore = Depen
       <div class="metric">Status<strong>{_esc(account.status.value)}</strong></div>
       <div class="metric">Owner<strong>{_esc(account.owner)}</strong></div>
     </section>
+    <h2>Account Controls</h2>
+    <form method="post" action="{suspend_action}">
+      <button type="submit">Suspend Account</button>
+    </form>
+    <form method="post" action="{reactivate_action}">
+      <button type="submit">Reactivate Account</button>
+    </form>
+    <h2>Create Checkout Session</h2>
+    <form method="post" action="{checkout_action}">
+      <label>Stripe price ID<input name="price_id" required></label>
+      <label>Success URL<input name="success_url" required></label>
+      <label>Cancel URL<input name="cancel_url" required></label>
+      <label>Plan<select name="billing_plan"><option value="developer">developer</option><option value="team">team</option><option value="enterprise">enterprise</option></select></label>
+      <label>Customer email<input name="customer_email" type="email" value="{_esc(account.owner)}"></label>
+      <label>Trial days<input name="trial_days" type="number" min="1" max="365"></label>
+      <button type="submit">Create Checkout</button>
+    </form>
     <h2>Projects</h2>
     {_table(["ID", "Name", "Slug", "Updated"], project_rows)}
     <h2>Members</h2>
@@ -1261,6 +1432,20 @@ def issues_endpoint(
             for row in _failure_summary(issues)
         ],
         "issues": issues,
+    }
+
+
+@app.get("/v1/ops/failure-metrics", dependencies=[Depends(require_admin_access)])
+def failure_metrics_endpoint(store: JobStore = Depends(get_job_store)) -> dict:
+    runs = store.list_runs(limit=1000)
+    extractions = store.list_extractions(limit=1000)
+    issues = _recent_issues(runs, extractions, limit=1000)
+    by_class: Counter[str] = Counter(str(issue.get("failure_class") or "unknown") for issue in issues)
+    by_domain: Counter[str] = Counter(str(issue.get("domain") or "job-run") for issue in issues)
+    return {
+        "issue_count": len(issues),
+        "by_failure_class": dict(by_class),
+        "by_domain": dict(by_domain),
     }
 
 

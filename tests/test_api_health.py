@@ -15,6 +15,7 @@ def test_health_reports_version() -> None:
     response = client.get("/health")
 
     assert response.status_code == 200
+    assert response.headers["X-Request-ID"].startswith("req_")
     payload = response.json()
     assert payload["status"] == "ok"
     assert payload["version"] == "0.9.0"
@@ -33,8 +34,11 @@ def test_readiness_reports_store_and_auth(monkeypatch, tmp_path) -> None:
     payload = response.json()
     assert payload["status"] == "ready"
     assert payload["store_backend"] == "sqlite"
+    assert payload["store_reachable"] is True
     assert payload["api_key_required"] is True
     assert payload["admin_token_configured"] is True
+    assert payload["stripe_secret_configured"] is False
+    assert payload["stripe_webhook_configured"] is False
 
 
 def test_catalog_crawl_endpoint_records_usage_with_pages_crawled(monkeypatch, tmp_path) -> None:

@@ -75,6 +75,9 @@ Use `/v1/issues` with a tenant API key for customer-visible failure triage. The
 response includes failed runs/extractions, stable failure classes, and
 recommendations.
 
+Use `/v1/ops/failure-metrics` with the admin token for aggregate failure
+counters by class and domain.
+
 ## API Service
 
 ```bash
@@ -188,6 +191,10 @@ POST /v1/billing/stripe/checkout-session
 The request stores `account_id` and `billing_plan` in Stripe subscription
 metadata so the existing webhook can sync plan and account status after
 checkout.
+
+Suspended accounts are enforced at API-key authentication. If a Stripe webhook,
+admin API update, or operator dashboard action sets an account to `suspended`,
+tenant API requests and portal access return HTTP 403.
 
 ## Sellable Product Baseline
 

@@ -34,6 +34,7 @@ class SmokeConfig:
     admin_token: str
     owner: str
     timeout_seconds: float
+    stripe_price_id: str | None = None
 
 
 def _url(base_url: str, path: str) -> str:
@@ -64,40 +65,33 @@ def run_smoke(config: SmokeConfig) -> None:
             f"api_key_required={ready_payload['api_key_required']}"
         )
 
-        account = client.post(
-            _url(config.base_url, "/v1/accounts"),
-            headers=admin_headers,
-            json={"name": "Smoke Account", "owner": config.owner},
-        )
-        _raise_for_status(account, "create account")
-        account_payload = account.json()
-        account_id = account_payload["id"]
-        print(f"account: {account_id}")
-
-        project = client.post(
-            _url(config.base_url, f"/v1/accounts/{account_id}/projects"),
-            headers=admin_headers,
-            json={"name": "Smoke Project", "slug": "smoke"},
-        )
-        _raise_for_status(project, "create project")
-        project_payload = project.json()
-        project_id = project_payload["id"]
-        print(f"project: {project_id}")
-
-        api_key = client.post(
-            _url(config.base_url, "/v1/api-keys"),
+        onboarding = client.post(
+            _url(config.base_url, "/v1/onboarding"),
             headers=admin_headers,
             json={
-                "name": "Smoke API Key",
-                "account_id": account_id,
-                "project_id": project_id,
-                "owner": config.owner,
-                "scopes": ["*"],
+                "account_name": "Smoke Account",
+                "owner_email": config.owner,
+                "project_name": "Smoke Project",
+                "billing_plan": "team",
+                "monthly_domain_quotas": {"example.com": 1, "*": 100},
             },
         )
-        _raise_for_status(api_key, "create api key")
-        token = api_key.json()["token"]
+        _raise_for_status(onboarding, "onboarding")
+        onboarding_payload = onboarding.json()
+        account_id = onboarding_payload["account"]["id"]
+        project_payload = onboarding_payload["project"]
+        project_id = project_payload["id"]
+        token = onboarding_payload["token"]
+        portal_path = onboarding_payload["portal_path"]
+        print(f"account: {account_id}")
+        print(f"project: {project_id}")
         print(f"api_key: {token[:10]}...")
+
+        portal = client.get(_url(config.base_url, portal_path))
+        _raise_for_status(portal, "customer portal")
+        if "customer portal" not in portal.text:
+            raise RuntimeError("customer portal response did not contain marker")
+        print("portal: ok")
 
         extraction = client.post(
             _url(config.base_url, "/v1/extract/product"),
@@ -111,9 +105,78 @@ def run_smoke(config: SmokeConfig) -> None:
         extraction_payload = extraction.json()
         print(f"extract_product: {extraction_payload['product']['name']}")
 
+        quota_block = client.post(
+            _url(config.base_url, "/v1/extract/product"),
+            headers={"X-API-Key": token},
+            json={
+                "url": "https://example.com/products/smoke-quota",
+                "html": PRODUCT_HTML,
+            },
+        )
+        if quota_block.status_code != 429:
+            raise RuntimeError(f"quota check failed: expected HTTP 429, got {quota_block.status_code}")
+        print("quota: blocked")
+
+        failed_extraction = client.post(
+            _url(config.base_url, "/v1/extract/product"),
+            headers={"X-API-Key": token},
+            json={"html": PRODUCT_HTML, "render": True},
+        )
+        if failed_extraction.status_code != 400:
+            raise RuntimeError(f"failure triage setup failed: HTTP {failed_extraction.status_code}")
+
+        job = client.post(
+            _url(config.base_url, "/v1/jobs"),
+            headers={"X-API-Key": token},
+            json={
+                "name": "Smoke Monitor",
+                "interval_minutes": 1440,
+                "account_id": account_id,
+                "project_id": project_id,
+                "config": {
+                    "targets": [{"url": "https://example.org/products/smoke", "tags": ["smoke"]}],
+                    "rules": [{"name": "any-change", "condition": "any_change"}],
+                    "channels": [],
+                },
+            },
+        )
+        _raise_for_status(job, "create job")
+        print(f"job: {job.json()['id']}")
+
+        worker = client.post(
+            _url(config.base_url, "/v1/worker/tick"),
+            headers={"X-API-Key": token},
+            params={"dry_run": "true", "domain_concurrency": 1},
+        )
+        _raise_for_status(worker, "worker tick")
+        print(f"worker_tick: due={worker.json()['due_jobs']}")
+
         usage = client.get(_url(config.base_url, "/v1/usage/summary"), headers={"X-API-Key": token})
         _raise_for_status(usage, "usage summary")
         print(f"usage_total: {usage.json()['total_quantity']}")
+
+        issues = client.get(_url(config.base_url, "/v1/issues"), headers={"X-API-Key": token})
+        _raise_for_status(issues, "issues")
+        if issues.json()["count"] < 1:
+            raise RuntimeError("issues response did not include expected failed extraction")
+        print(f"issues: {issues.json()['count']}")
+
+        if config.stripe_price_id:
+            checkout = client.post(
+                _url(config.base_url, "/v1/billing/stripe/checkout-session"),
+                headers=admin_headers,
+                json={
+                    "account_id": account_id,
+                    "price_id": config.stripe_price_id,
+                    "success_url": "https://example.com/success",
+                    "cancel_url": "https://example.com/cancel",
+                    "billing_plan": "team",
+                },
+            )
+            _raise_for_status(checkout, "stripe checkout")
+            if not checkout.json()["url"].startswith("https://"):
+                raise RuntimeError("stripe checkout response did not include a hosted URL")
+            print("stripe_checkout: ok")
 
         dashboard = client.get(
             _url(config.base_url, "/dashboard"),
@@ -131,12 +194,14 @@ def parse_args(argv: list[str]) -> SmokeConfig:
     parser.add_argument("--admin-token", required=True, help="COMMERCELENS_ADMIN_TOKEN value")
     parser.add_argument("--owner", default="ops@example.com", help="Owner email for smoke records")
     parser.add_argument("--timeout-seconds", type=float, default=30.0)
+    parser.add_argument("--stripe-price-id", default=None, help="Optional Stripe price ID to verify checkout creation")
     args = parser.parse_args(argv)
     return SmokeConfig(
         base_url=args.base_url,
         admin_token=args.admin_token,
         owner=args.owner,
         timeout_seconds=args.timeout_seconds,
+        stripe_price_id=args.stripe_price_id,
     )
 
 

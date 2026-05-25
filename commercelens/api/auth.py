@@ -4,7 +4,7 @@ import os
 
 from fastapi import Header, HTTPException, Request, status
 
-from commercelens.jobs.models import ApiKeyRecord
+from commercelens.jobs.models import AccountStatus, ApiKeyRecord
 from commercelens.jobs.store import JobStore
 
 
@@ -34,10 +34,20 @@ def require_api_key(x_api_key: str | None = Header(default=None)) -> ApiKeyRecor
         return None
     if not x_api_key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing X-API-Key header.")
-    key = get_job_store().verify_api_key(x_api_key)
+    store = get_job_store()
+    key = store.verify_api_key(x_api_key)
     if not key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key.")
+    require_account_active(store, key)
     return key
+
+
+def require_account_active(store: JobStore, key: ApiKeyRecord) -> None:
+    if not key.account_id:
+        return
+    account = store.get_account(key.account_id)
+    if account and account.status == AccountStatus.suspended:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is suspended.")
 
 
 def require_admin_token(x_admin_token: str | None = Header(default=None)) -> None:

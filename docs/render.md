@@ -78,8 +78,17 @@ python scripts/smoke_deploy.py \
   --owner ops@example.com
 ```
 
-The script checks `/health`, `/ready`, account creation, project creation, API
-key creation, product extraction, usage summary, and dashboard access.
+The script checks `/health`, `/ready`, onboarding, customer portal access,
+product extraction, quota rejection, job creation, worker tick, failure triage,
+usage summary, and dashboard access. To include Stripe Checkout creation, add:
+
+```bash
+python scripts/smoke_deploy.py \
+  --base-url https://YOUR-API.onrender.com \
+  --admin-token "$ADMIN_TOKEN" \
+  --owner ops@example.com \
+  --stripe-price-id price_REPLACE
+```
 
 Manual checks:
 
