@@ -11,9 +11,19 @@ from commercelens.matching.identity import build_identity_graph
 
 def test_build_identity_graph_clusters_matching_products() -> None:
     records = [
-        ProductRecord(name="Nike Air Max 90", brand="Nike", amount=120, currency="USD", url="https://a.test/1"),
-        ProductRecord(name="Nike Air Max 90 Shoes", brand="Nike", amount=125, currency="USD", url="https://b.test/2"),
-        ProductRecord(name="Adidas Samba", brand="Adidas", amount=90, currency="USD", url="https://c.test/3"),
+        ProductRecord(
+            name="Nike Air Max 90", brand="Nike", amount=120, currency="USD", url="https://a.test/1"
+        ),
+        ProductRecord(
+            name="Nike Air Max 90 Shoes",
+            brand="Nike",
+            amount=125,
+            currency="USD",
+            url="https://b.test/2",
+        ),
+        ProductRecord(
+            name="Adidas Samba", brand="Adidas", amount=90, currency="USD", url="https://c.test/3"
+        ),
     ]
 
     graph = build_identity_graph(records, threshold=0.72)
@@ -39,7 +49,12 @@ def test_identity_graph_endpoint_records_usage(monkeypatch, tmp_path) -> None:
             "threshold": 0.72,
             "records": [
                 {"name": "Nike Air Max 90", "brand": "Nike", "amount": 120, "currency": "USD"},
-                {"name": "Nike Air Max 90 Shoes", "brand": "Nike", "amount": 125, "currency": "USD"},
+                {
+                    "name": "Nike Air Max 90 Shoes",
+                    "brand": "Nike",
+                    "amount": 125,
+                    "currency": "USD",
+                },
             ],
         },
     )

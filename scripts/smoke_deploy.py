@@ -114,7 +114,9 @@ def run_smoke(config: SmokeConfig) -> None:
             },
         )
         if quota_block.status_code != 429:
-            raise RuntimeError(f"quota check failed: expected HTTP 429, got {quota_block.status_code}")
+            raise RuntimeError(
+                f"quota check failed: expected HTTP 429, got {quota_block.status_code}"
+            )
         print("quota: blocked")
 
         failed_extraction = client.post(
@@ -190,11 +192,17 @@ def run_smoke(config: SmokeConfig) -> None:
 
 def parse_args(argv: list[str]) -> SmokeConfig:
     parser = argparse.ArgumentParser(description="Smoke test a deployed CommerceLens API.")
-    parser.add_argument("--base-url", required=True, help="Base API URL, e.g. https://app.onrender.com")
+    parser.add_argument(
+        "--base-url", required=True, help="Base API URL, e.g. https://app.onrender.com"
+    )
     parser.add_argument("--admin-token", required=True, help="COMMERCELENS_ADMIN_TOKEN value")
     parser.add_argument("--owner", default="ops@example.com", help="Owner email for smoke records")
     parser.add_argument("--timeout-seconds", type=float, default=30.0)
-    parser.add_argument("--stripe-price-id", default=None, help="Optional Stripe price ID to verify checkout creation")
+    parser.add_argument(
+        "--stripe-price-id",
+        default=None,
+        help="Optional Stripe price ID to verify checkout creation",
+    )
     args = parser.parse_args(argv)
     return SmokeConfig(
         base_url=args.base_url,

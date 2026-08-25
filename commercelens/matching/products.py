@@ -96,7 +96,9 @@ def match_products(
         for right in right_records:
             score, reasons = product_similarity(left, right)
             if score >= threshold:
-                candidates.append(ProductMatch(left=left, right=right, score=score, reasons=reasons))
+                candidates.append(
+                    ProductMatch(left=left, right=right, score=score, reasons=reasons)
+                )
         candidates.sort(key=lambda item: item.score, reverse=True)
         matches.extend(candidates[:top_k])
     return ProductMatchResult(matches=matches)

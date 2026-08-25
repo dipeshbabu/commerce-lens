@@ -1,8 +1,14 @@
 from commercelens.schemas.product import Availability, Price, Product, ProductExtractionResult
-from commercelens.storage.price_store import PriceSnapshotStore, compare_snapshots, snapshot_from_result
+from commercelens.storage.price_store import (
+    PriceSnapshotStore,
+    compare_snapshots,
+    snapshot_from_result,
+)
 
 
-def _result(amount: float, availability: Availability = Availability.IN_STOCK) -> ProductExtractionResult:
+def _result(
+    amount: float, availability: Availability = Availability.IN_STOCK
+) -> ProductExtractionResult:
     return ProductExtractionResult(
         url="https://example.com/products/widget",
         product=Product(

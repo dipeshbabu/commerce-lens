@@ -15,7 +15,9 @@ def get_job_store():
 
         dsn = os.getenv("COMMERCELENS_DATABASE_URL") or os.getenv("DATABASE_URL")
         if not dsn:
-            raise RuntimeError("COMMERCELENS_STORE_BACKEND=postgres requires COMMERCELENS_DATABASE_URL or DATABASE_URL.")
+            raise RuntimeError(
+                "COMMERCELENS_STORE_BACKEND=postgres requires COMMERCELENS_DATABASE_URL or DATABASE_URL."
+            )
         return PostgresJobStore(dsn)
     return JobStore(os.getenv("COMMERCELENS_JOBS_DB", "commercelens_jobs.db"))
 
@@ -33,7 +35,9 @@ def require_api_key(x_api_key: str | None = Header(default=None)) -> ApiKeyRecor
     if os.getenv("COMMERCELENS_REQUIRE_API_KEY", "false").lower() not in {"1", "true", "yes"}:
         return None
     if not x_api_key:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing X-API-Key header.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing X-API-Key header."
+        )
     store = get_job_store()
     key = store.verify_api_key(x_api_key)
     if not key:

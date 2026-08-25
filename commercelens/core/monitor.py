@@ -5,7 +5,11 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field
 
 from commercelens.extractors.product import extract_product
-from commercelens.storage.backends import ProductSnapshotBackend, StorageConfig, make_snapshot_backend
+from commercelens.storage.backends import (
+    ProductSnapshotBackend,
+    StorageConfig,
+    make_snapshot_backend,
+)
 from commercelens.storage.price_store import (
     PriceChange,
     PriceSnapshotStore,
@@ -80,7 +84,9 @@ def monitor_products(
     changes: list[PriceChange] = []
     warnings: list[str] = []
 
-    snapshot_backend = backend or (make_snapshot_backend(storage_config) if storage_config else None)
+    snapshot_backend = backend or (
+        make_snapshot_backend(storage_config) if storage_config else None
+    )
     for url in urls:
         try:
             result = monitor_product(

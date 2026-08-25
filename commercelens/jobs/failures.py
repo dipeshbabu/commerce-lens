@@ -19,7 +19,9 @@ RECOMMENDATIONS: dict[FailureClass, str] = {
 }
 
 
-def classify_failure(error: str | None, *, confidence: float | None = None, metadata: dict | None = None) -> FailureClass | None:
+def classify_failure(
+    error: str | None, *, confidence: float | None = None, metadata: dict | None = None
+) -> FailureClass | None:
     if confidence is not None and confidence < 0.55:
         return FailureClass.parser_low_confidence
     if not error:
@@ -35,15 +37,33 @@ def classify_failure(error: str | None, *, confidence: float | None = None, meta
         return FailureClass.quota_exceeded
     if "429" in text or "rate limit" in text or "too many requests" in text:
         return FailureClass.rate_limited
-    if "403" in text or "401" in text or "blocked" in text or "forbidden" in text or "captcha" in text:
+    if (
+        "403" in text
+        or "401" in text
+        or "blocked" in text
+        or "forbidden" in text
+        or "captcha" in text
+    ):
         return FailureClass.blocked
-    if "render=true requires a url" in text or "javascript" in text or "render" in text and "required" in text:
+    if (
+        "render=true requires a url" in text
+        or "javascript" in text
+        or "render" in text
+        and "required" in text
+    ):
         return FailureClass.render_required
     if "timeout" in text or "timed out" in text:
         return FailureClass.timeout
     if "invalid url" in text or "missing scheme" in text or "url" in text and "invalid" in text:
         return FailureClass.invalid_url
-    if "dns" in text or "connection" in text or "network" in text or "tls" in text or "ssl" in text or "host" in text:
+    if (
+        "dns" in text
+        or "connection" in text
+        or "network" in text
+        or "tls" in text
+        or "ssl" in text
+        or "host" in text
+    ):
         return FailureClass.network_error
     return FailureClass.unknown
 
@@ -80,7 +100,9 @@ def failed_run_issue(run: JobRun) -> dict | None:
 def failed_extraction_issue(record: ExtractionRecord) -> dict | None:
     if not record.error and record.status.value != "failed":
         return None
-    failure_class = record.failure_class or classify_failure(record.error, confidence=record.confidence, metadata=record.metadata)
+    failure_class = record.failure_class or classify_failure(
+        record.error, confidence=record.confidence, metadata=record.metadata
+    )
     return {
         "source": "extraction",
         "id": record.id,

@@ -43,7 +43,11 @@ def load_product_records(path: str | Path) -> DatasetLoadResult:
     if suffix == ".csv":
         return _load_csv(file_path)
     if suffix == ".txt":
-        records = [ProductRecord(url=line.strip()) for line in file_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        records = [
+            ProductRecord(url=line.strip())
+            for line in file_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
         return DatasetLoadResult(records=records)
     raise ValueError("Supported formats: .txt, .csv, .json, .jsonl")
 
@@ -56,13 +60,28 @@ def write_product_records(records: Iterable[ProductRecord], path: str | Path) ->
     if suffix == ".jsonl":
         with file_path.open("w", encoding="utf-8") as handle:
             for row in rows:
-                handle.write(json.dumps(row.model_dump(mode="json", exclude_none=True), ensure_ascii=False) + "\n")
+                handle.write(
+                    json.dumps(row.model_dump(mode="json", exclude_none=True), ensure_ascii=False)
+                    + "\n"
+                )
         return DatasetWriteResult(path=str(file_path), count=len(rows), format="jsonl")
     if suffix == ".json":
-        file_path.write_text(json.dumps([row.model_dump(mode="json", exclude_none=True) for row in rows], indent=2), encoding="utf-8")
+        file_path.write_text(
+            json.dumps([row.model_dump(mode="json", exclude_none=True) for row in rows], indent=2),
+            encoding="utf-8",
+        )
         return DatasetWriteResult(path=str(file_path), count=len(rows), format="json")
     if suffix == ".csv":
-        fieldnames = ["url", "product_key", "name", "brand", "amount", "currency", "availability", "image_url"]
+        fieldnames = [
+            "url",
+            "product_key",
+            "name",
+            "brand",
+            "amount",
+            "currency",
+            "availability",
+            "image_url",
+        ]
         with file_path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(handle, fieldnames=fieldnames)
             writer.writeheader()

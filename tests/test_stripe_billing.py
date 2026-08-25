@@ -16,7 +16,11 @@ from commercelens.jobs.store import JobStore
 
 def signed_header(payload: bytes, secret: str, timestamp: int | None = None) -> str:
     timestamp = timestamp or int(time.time())
-    digest = hmac.new(secret.encode("utf-8"), f"{timestamp}.{payload.decode('utf-8')}".encode("utf-8"), hashlib.sha256).hexdigest()
+    digest = hmac.new(
+        secret.encode("utf-8"),
+        f"{timestamp}.{payload.decode('utf-8')}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
     return f"t={timestamp},v1={digest}"
 
 
@@ -102,7 +106,9 @@ def test_stripe_checkout_endpoint_creates_session(monkeypatch, tmp_path) -> None
         assert kwargs["billing_plan"] == BillingPlan.team
         return {"id": "cs_test", "url": "https://checkout.stripe.test/session"}
 
-    monkeypatch.setattr("commercelens.api.main.create_checkout_session", fake_create_checkout_session)
+    monkeypatch.setattr(
+        "commercelens.api.main.create_checkout_session", fake_create_checkout_session
+    )
     client = TestClient(app)
 
     response = client.post(

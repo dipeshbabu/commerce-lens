@@ -25,7 +25,11 @@ class WebhookSubscription(BaseModel):
 
 def alert_event_to_webhook(event: AlertEvent) -> WebhookEnvelope:
     event_type = "price.change"
-    if event.change_type in {"availability_change", "back_in_stock", "price_and_availability_change"}:
+    if event.change_type in {
+        "availability_change",
+        "back_in_stock",
+        "price_and_availability_change",
+    }:
         event_type = "availability.change"
     return WebhookEnvelope(
         event_type=event_type,

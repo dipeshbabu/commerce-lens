@@ -82,7 +82,12 @@ def _clean_text(value: str | None) -> str | None:
 def _node_text(node: Tag | None) -> str | None:
     if not node:
         return None
-    value = node.get("content") or node.get("title") or node.get("alt") or node.get_text(" ", strip=True)
+    value = (
+        node.get("content")
+        or node.get("title")
+        or node.get("alt")
+        or node.get_text(" ", strip=True)
+    )
     return _clean_text(str(value)) if value else None
 
 
@@ -117,7 +122,9 @@ def _price_text(card: Tag) -> tuple[str | None, str | None]:
 
 
 def _product_url(card: Tag, base_url: str | None) -> str | None:
-    preferred = card.select_one("a[href][itemprop='url']") or card.select_one("h1 a[href], h2 a[href], h3 a[href]")
+    preferred = card.select_one("a[href][itemprop='url']") or card.select_one(
+        "h1 a[href], h2 a[href], h3 a[href]"
+    )
     link = preferred or card.select_one("a[href]")
     if not link or not link.get("href"):
         return None
@@ -217,7 +224,9 @@ def extract_listing_from_html(html: str, url: str | None = None) -> ListingExtra
         availability_value = None if availability.value == "unknown" else availability.value
 
         if not name and product_url:
-            name = product_url.rstrip("/").split("/")[-1].replace("-", " ").replace("_", " ").title()
+            name = (
+                product_url.rstrip("/").split("/")[-1].replace("-", " ").replace("_", " ").title()
+            )
 
         if not name and not product_url:
             continue

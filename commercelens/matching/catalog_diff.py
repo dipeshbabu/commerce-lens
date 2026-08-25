@@ -54,7 +54,9 @@ def _identity_key(record: ProductRecord) -> str:
     return f"name:{normalize_text(record.brand)}:{normalize_text(record.name)}"
 
 
-def _changed_fields(before: ProductRecord, after: ProductRecord) -> dict[str, dict[str, object | None]]:
+def _changed_fields(
+    before: ProductRecord, after: ProductRecord
+) -> dict[str, dict[str, object | None]]:
     fields: dict[str, dict[str, object | None]] = {}
     for name in ("amount", "currency", "availability", "name", "brand", "image_url"):
         before_value = getattr(before, name)

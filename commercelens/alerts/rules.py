@@ -85,11 +85,23 @@ def rule_matches_change(rule: AlertRule, change: PriceChange) -> bool:
     if condition == AlertCondition.BACK_IN_STOCK:
         return change.change_type == "back_in_stock"
     if condition == AlertCondition.AVAILABILITY_CHANGE:
-        return change.change_type in {"availability_change", "back_in_stock", "price_and_availability_change"}
+        return change.change_type in {
+            "availability_change",
+            "back_in_stock",
+            "price_and_availability_change",
+        }
     if condition == AlertCondition.PRICE_BELOW:
-        return rule.threshold is not None and change.current_amount is not None and change.current_amount <= rule.threshold
+        return (
+            rule.threshold is not None
+            and change.current_amount is not None
+            and change.current_amount <= rule.threshold
+        )
     if condition == AlertCondition.PRICE_ABOVE:
-        return rule.threshold is not None and change.current_amount is not None and change.current_amount >= rule.threshold
+        return (
+            rule.threshold is not None
+            and change.current_amount is not None
+            and change.current_amount >= rule.threshold
+        )
     if condition == AlertCondition.PERCENT_DROP_AT_LEAST:
         return (
             rule.threshold is not None
@@ -129,7 +141,11 @@ def snapshot_triggered_threshold(rule: AlertRule, snapshot: ProductSnapshot) -> 
         return None
     if rule.product_keys and snapshot.product_key not in rule.product_keys:
         return None
-    if rule.urls and snapshot.source_url not in rule.urls and snapshot.canonical_url not in rule.urls:
+    if (
+        rule.urls
+        and snapshot.source_url not in rule.urls
+        and snapshot.canonical_url not in rule.urls
+    ):
         return None
     if rule.currency and snapshot.currency and rule.currency.upper() != snapshot.currency.upper():
         return None

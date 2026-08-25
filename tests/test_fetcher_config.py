@@ -1,6 +1,11 @@
 import pytest
 
-from commercelens.core.fetcher import DEFAULT_USER_AGENT, FetchError, _configured_timeout, _configured_user_agent
+from commercelens.core.fetcher import (
+    DEFAULT_USER_AGENT,
+    FetchError,
+    _configured_timeout,
+    _configured_user_agent,
+)
 
 
 def test_user_agent_can_be_configured(monkeypatch) -> None:
