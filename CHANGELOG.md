@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Relicensed the project under the Apache License 2.0 and synchronized package metadata,
+  contribution terms, security guidance, and release documentation.
+
 ## 0.9.0
 
 - Repositioned CommerceLens as a private commercial product.
