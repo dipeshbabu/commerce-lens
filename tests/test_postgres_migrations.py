@@ -31,6 +31,7 @@ def test_postgres_migrations_have_stable_unique_ids() -> None:
     assert ids == sorted(ids)
     assert len(ids) == len(set(ids))
     assert "0001_hosted_core" in ids
+    assert "0002_portal_sessions" in ids
 
 
 def test_run_postgres_migrations_is_idempotent() -> None:
@@ -39,6 +40,8 @@ def test_run_postgres_migrations_is_idempotent() -> None:
     first = run_postgres_migrations(conn)
     second = run_postgres_migrations(conn)
 
-    assert first == ["0001_hosted_core"]
+    assert first == ["0001_hosted_core", "0002_portal_sessions"]
     assert second == []
     assert "0001_hosted_core" in conn.applied
+    assert "0002_portal_sessions" in conn.applied
+    assert any("CREATE TABLE IF NOT EXISTS portal_sessions" in sql for sql in conn.statements)

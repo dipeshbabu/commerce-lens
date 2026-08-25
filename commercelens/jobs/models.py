@@ -302,6 +302,26 @@ class ApiKeyCreateResult(BaseModel):
     token: str
 
 
+class PortalSessionRecord(BaseModel):
+    id: str = Field(default_factory=lambda: f"psn_{uuid4().hex[:16]}")
+    api_key_id: str
+    account_id: str | None = None
+    project_id: str | None = None
+    owner: str | None = None
+    token_hash: str
+    csrf_token_hash: str
+    created_at: str = Field(default_factory=utc_now_iso)
+    last_seen_at: str = Field(default_factory=utc_now_iso)
+    expires_at: str
+    revoked_at: str | None = None
+
+
+class PortalSessionCreateResult(BaseModel):
+    session: PortalSessionRecord
+    token: str
+    csrf_token: str
+
+
 class UsageEvent(BaseModel):
     id: str = Field(default_factory=lambda: f"usage_{uuid4().hex[:16]}")
     metric: UsageMetric

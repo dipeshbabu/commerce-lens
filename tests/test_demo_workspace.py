@@ -12,7 +12,7 @@ def test_seed_demo_workspace_populates_portal_data(tmp_path) -> None:
     assert result["account"]["id"] == DEMO_ACCOUNT_ID
     assert result["project"]["id"] == DEMO_PROJECT_ID
     assert result["token"].startswith("cl_")
-    assert result["portal_path"].startswith("/portal?api_key=cl_")
+    assert result["portal_path"] == "/portal/login"
     assert len(store.list_jobs(account_id=DEMO_ACCOUNT_ID, project_id=DEMO_PROJECT_ID)) == 1
     assert len(store.list_runs(account_id=DEMO_ACCOUNT_ID, project_id=DEMO_PROJECT_ID)) == 2
     assert len(store.list_extractions(account_id=DEMO_ACCOUNT_ID, project_id=DEMO_PROJECT_ID)) == 4

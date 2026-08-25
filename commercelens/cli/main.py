@@ -468,7 +468,7 @@ def onboard_customer(
         "member": member.model_dump(mode="json", exclude_none=True),
         "api_key": key_result.key.model_dump(mode="json", exclude_none=True),
         "token": key_result.token,
-        "portal_path": f"/portal?api_key={key_result.token}",
+        "portal_path": "/portal/login",
     }
     _write_or_print(payload, out=out)
 

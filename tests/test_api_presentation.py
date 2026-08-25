@@ -2,6 +2,7 @@ from commercelens.api.presentation import (
     dashboard_shell,
     escape_html,
     portal_href,
+    portal_login,
     portal_shell,
     preformatted_json,
     table,
@@ -22,10 +23,13 @@ def test_dashboard_shell_preserves_navigation_and_escapes_title() -> None:
 
 
 def test_portal_shell_preserves_navigation_and_escapes_title() -> None:
-    result = portal_shell("Customer <view>", "<p>trusted content</p>", "?api_key=test")
+    result = portal_shell("Customer <view>", "<p>trusted content</p>", "csrf_<token>")
 
     assert "<title>Customer &lt;view&gt; - CommerceLens</title>" in result
-    assert 'href="/portal?api_key=test"' in result
+    assert 'href="/portal"' in result
+    assert 'action="/portal/session/rotate"' in result
+    assert 'action="/portal/logout"' in result
+    assert 'value="csrf_&lt;token&gt;"' in result
     assert "customer portal" in result
 
 
@@ -47,5 +51,15 @@ def test_preformatted_json_is_deterministic_and_escaped() -> None:
     assert "&lt;tag&gt;" in result
 
 
-def test_portal_href_appends_existing_query() -> None:
-    assert portal_href("/portal/jobs/job_1", "?api_key=test") == ("/portal/jobs/job_1?api_key=test")
+def test_portal_login_uses_a_password_field_and_csrf_token() -> None:
+    result = portal_login("login_csrf_<token>", "Invalid <key>")
+
+    assert 'action="/portal/login"' in result
+    assert 'name="api_key" type="password"' in result
+    assert 'name="csrf_token" type="hidden" value="login_csrf_&lt;token&gt;"' in result
+    assert "Invalid &lt;key&gt;" in result
+    assert "api_key=" not in result
+
+
+def test_portal_href_returns_clean_path() -> None:
+    assert portal_href("/portal/jobs/job_1") == "/portal/jobs/job_1"

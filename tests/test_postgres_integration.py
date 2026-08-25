@@ -50,6 +50,14 @@ def test_postgres_migrations_and_tenant_store_round_trip() -> None:
             )
         )
         assert store.verify_api_key(key.token) is not None
+        session = store.create_portal_session(key.key)
+        verified_session = store.verify_portal_session(session.token)
+        assert verified_session is not None
+        assert verified_session.account_id == account.id
+        assert store.verify_portal_csrf(verified_session, session.csrf_token)
+        rotated_session = store.rotate_portal_session(verified_session, key.key)
+        assert store.verify_portal_session(session.token) is None
+        assert store.verify_portal_session(rotated_session.token) is not None
 
         config = MonitorConfig(
             targets=[MonitorTarget(url="https://example.com/product")],

@@ -1,10 +1,11 @@
 # Customer Portal
 
-CommerceLens includes a customer-facing portal for early hosted customers and
-demo workspaces. It is scoped by a tenant API key and shows only that key's
-account and project data.
+CommerceLens includes a tenant scoped browser portal for hosted customers and
+demo workspaces. Customers use it to review monitored products, job health,
+recent changes, extraction results, usage, quotas, and exports without operating
+the worker or querying the API directly.
 
-## Open the Portal
+## Sign In
 
 Run the API against the jobs database that contains the customer account:
 
@@ -14,20 +15,46 @@ set COMMERCELENS_REQUIRE_API_KEY=true
 commercelens serve --host 127.0.0.1 --port 8000
 ```
 
-Open the portal with a tenant API key:
+Open `/portal/login` and enter the one time API key supplied by the workspace
+administrator:
 
 ```text
-http://127.0.0.1:8000/portal?api_key=cl_REPLACE_WITH_TOKEN
+https://api.example.com/portal/login
 ```
 
-The same key must have these scopes:
+The sign in form exchanges the API key for an opaque, expiring browser session.
+The API key is sent in the form body and is never added to portal links, browser
+history, or export URLs. Continue sending `X-API-Key` when using JSON API routes;
+that client authentication flow is unchanged.
+
+The key must have these scopes:
 
 - `usage:read`
 - `jobs:read`
 - `runs:read`
 - `extractions:read`
 
-Keys with `*` also work.
+Keys with `*` also work. Suspended accounts and disabled keys cannot start or
+continue a portal session.
+
+## Session Security
+
+Portal sessions use server stored token hashes and `Secure`, `HttpOnly`, and
+`SameSite=Strict` cookies. State changing portal forms also require a session
+bound CSRF token. Sessions have both an absolute lifetime and an inactivity
+timeout, and users can rotate the current session or sign out from every portal
+page.
+
+Configure the limits in seconds:
+
+```bash
+COMMERCELENS_PORTAL_SESSION_TIMEOUT_SECONDS=28800
+COMMERCELENS_PORTAL_IDLE_TIMEOUT_SECONDS=1800
+```
+
+Both values accept 60 seconds through 7 days. Always serve the portal over HTTPS.
+For local browser testing, use `localhost` or a local TLS proxy so the secure
+cookies are accepted.
 
 ## Portal Views
 
@@ -36,50 +63,39 @@ The overview page shows:
 - monitored product URLs
 - active jobs and schedule state
 - recent job runs and alert activity
-- recent failure classes and recommended next actions
-- recent product/listing extractions
-- usage totals
-- quota usage and remaining budget
-- JSON export links for jobs, runs, extractions, and usage events
+- recent failure classes and recommended actions
+- recent product and listing extractions
+- usage totals and quota remaining
+- JSON exports for jobs, runs, extractions, and usage events
 
-Detail pages are available for:
+Detail pages are available at:
 
 - `/portal/jobs/{job_id}`
 - `/portal/runs/{run_id}`
 - `/portal/extractions/{extraction_id}`
 
-All detail pages re-check the API key and tenant scope before loading records.
-Records from another account or project return `404`.
+Every view revalidates the session and tenant scope. A record from another
+account or project returns `404` without revealing that the record exists.
 
 ## Failure Triage
 
-The portal classifies failed runs and extractions into stable classes:
+The portal groups failed runs and extractions into stable classes such as
+`timeout`, `blocked`, `render_required`, `parser_low_confidence`, `network_error`,
+`invalid_url`, `rate_limited`, `quota_exceeded`, and `queue_deferred`.
 
-- `timeout`
-- `blocked`
-- `render_required`
-- `parser_low_confidence`
-- `network_error`
-- `invalid_url`
-- `rate_limited`
-- `quota_exceeded`
-- `queue_deferred`
-- `unknown`
-
-Use `/v1/issues` with the same tenant API key to fetch the same triage data as
-JSON for customer-facing UI or support workflows.
+Use `/v1/issues` with `X-API-Key` to fetch the same triage data as JSON for a
+customer UI or support workflow.
 
 ## Exports
 
-The portal exposes tenant-scoped JSON downloads:
+Authenticated portal users can download tenant scoped JSON from clean paths:
 
 ```text
-/portal/export/jobs?api_key=cl_REPLACE_WITH_TOKEN
-/portal/export/runs?api_key=cl_REPLACE_WITH_TOKEN
-/portal/export/extractions?api_key=cl_REPLACE_WITH_TOKEN
-/portal/export/usage?api_key=cl_REPLACE_WITH_TOKEN
+/portal/export/jobs
+/portal/export/runs
+/portal/export/extractions
+/portal/export/usage
 ```
 
-These are intended for early customer handoff and demos. For production
-customer access, put the portal behind an authenticated edge and avoid sharing
-raw API-key URLs broadly.
+Export responses are marked `no-store`. They use the browser session cookie and
+never carry an API key in the URL.
