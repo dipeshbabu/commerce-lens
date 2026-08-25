@@ -10,6 +10,7 @@ import httpx
 from pydantic import BaseModel, Field
 
 from commercelens.alerts.rules import AlertDestination, AlertDestinationType, AlertEvent
+from commercelens.core.url_policy import URLPolicyError, URLValidator
 
 
 class DeliveryResult(BaseModel):
@@ -80,24 +81,45 @@ def _deliver_one(
 
     if destination.type == AlertDestinationType.STDOUT:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
-        return DeliveryResult(destination_type=destination.type, ok=True, message="Printed to stdout.")
+        return DeliveryResult(
+            destination_type=destination.type, ok=True, message="Printed to stdout."
+        )
 
     if destination.type == AlertDestinationType.FILE:
         if not destination.file_path:
-            return DeliveryResult(destination_type=destination.type, ok=False, message="Missing file_path.")
+            return DeliveryResult(
+                destination_type=destination.type, ok=False, message="Missing file_path."
+            )
         path = Path(destination.file_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
-        return DeliveryResult(destination_type=destination.type, ok=True, message=f"Wrote alert to {path}.")
+        return DeliveryResult(
+            destination_type=destination.type, ok=True, message=f"Wrote alert to {path}."
+        )
 
     if destination.type in {AlertDestinationType.WEBHOOK, AlertDestinationType.SLACK}:
         if not destination.url:
-            return DeliveryResult(destination_type=destination.type, ok=False, message="Missing url.")
+            return DeliveryResult(
+                destination_type=destination.type, ok=False, message="Missing url."
+            )
         outbound = payload
         if destination.type == AlertDestinationType.SLACK:
             outbound = {"text": payload["text"], "blocks": _slack_blocks(payload)}
-        response = httpx.post(str(destination.url), json=outbound, timeout=15.0)
+        try:
+            safe_url = URLValidator().validate(str(destination.url))
+            response = httpx.post(
+                safe_url,
+                json=outbound,
+                timeout=15.0,
+                follow_redirects=False,
+            )
+        except (URLPolicyError, httpx.RequestError) as exc:
+            return DeliveryResult(
+                destination_type=destination.type,
+                ok=False,
+                message=f"Webhook delivery failed: {exc}",
+            )
         return DeliveryResult(
             destination_type=destination.type,
             ok=200 <= response.status_code < 300,
@@ -108,7 +130,9 @@ def _deliver_one(
     if destination.type == AlertDestinationType.EMAIL:
         return _send_email(destination, payload)
 
-    return DeliveryResult(destination_type=destination.type, ok=False, message="Unsupported destination.")
+    return DeliveryResult(
+        destination_type=destination.type, ok=False, message="Unsupported destination."
+    )
 
 
 def _slack_blocks(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -120,7 +144,9 @@ def _slack_blocks(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _send_email(destination: AlertDestination, payload: dict[str, Any]) -> DeliveryResult:
     if not destination.email_to:
-        return DeliveryResult(destination_type=destination.type, ok=False, message="Missing email_to.")
+        return DeliveryResult(
+            destination_type=destination.type, ok=False, message="Missing email_to."
+        )
 
     import os
 

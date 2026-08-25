@@ -1,5 +1,32 @@
 # Production Hardening
 
+## Outbound URL policy
+
+CommerceLens treats product, listing, redirect, browser subresource, and alert webhook URLs
+as untrusted input. The default policy permits only HTTP and HTTPS destinations that resolve
+entirely to public address space.
+
+The policy rejects embedded credentials, loopback, private, link local, multicast, reserved,
+unspecified, and known cloud metadata destinations. Static fetches also limit redirects,
+decoded response bytes, URL length, and accepted HTML content types.
+
+```text
+COMMERCELENS_MAX_REDIRECTS=5
+COMMERCELENS_MAX_RESPONSE_BYTES=5242880
+COMMERCELENS_MAX_URL_LENGTH=4096
+```
+
+Private deployments that intentionally fetch a private commerce host can allow exact
+hostnames:
+
+```text
+COMMERCELENS_ALLOWED_PRIVATE_HOSTS=catalog.internal.example
+```
+
+Do not set this option from customer input and do not allow broad suffixes. Network egress
+controls should still deny cloud metadata and internal management networks. Application
+validation is one layer, not a replacement for an outbound firewall or proxy policy.
+
 Use the production preflight command before promoting a hosted API or worker
 release:
 

@@ -71,3 +71,27 @@ def test_dry_run_delivery_returns_payload() -> None:
     assert report.results[0].ok
     assert report.results[0].dry_run
     assert report.results[0].payload is not None
+
+
+def test_webhook_delivery_rejects_private_destinations() -> None:
+    event = AlertEvent(
+        rule_name="drop",
+        condition=AlertCondition.PRICE_DROP,
+        product_key="brand::sample-product",
+        current_amount=85.0,
+        currency="USD",
+        changed_at="2026-01-01T00:00:00Z",
+    )
+
+    report = deliver_alert(
+        event,
+        [
+            AlertDestination(
+                type=AlertDestinationType.WEBHOOK,
+                url="http://127.0.0.1/internal",
+            )
+        ],
+    )
+
+    assert not report.results[0].ok
+    assert "non-public address space" in (report.results[0].message or "")
