@@ -32,7 +32,9 @@ from commercelens.quality.benchmarks import build_quality_report, run_benchmark_
 from commercelens.storage.exporters import write_csv, write_jsonl
 from commercelens.storage.price_store import PriceSnapshotStore
 
-app = typer.Typer(help="CommerceLens: product and catalog extraction for developers.")
+app = typer.Typer(
+    help="CommerceLens: competitor price, availability, and catalog monitoring."
+)
 console = Console()
 
 OutputFormat = Literal["json", "jsonl", "csv"]

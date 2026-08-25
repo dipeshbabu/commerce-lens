@@ -55,7 +55,7 @@ COMMERCELENS_DEFAULT_TIMEOUT_SECONDS=20
 Update this value before real customer traffic:
 
 ```text
-COMMERCELENS_USER_AGENT=CommerceLens/0.9 (+mailto:ops@yourdomain.com)
+COMMERCELENS_USER_AGENT=CommerceLens (+mailto:ops@yourdomain.com)
 ```
 
 ## Smoke Test

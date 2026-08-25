@@ -16,7 +16,7 @@ COMMERCELENS_STORE_BACKEND=postgres
 COMMERCELENS_DATABASE_URL=postgresql://user:password@host:5432/commercelens
 COMMERCELENS_REQUIRE_API_KEY=true
 COMMERCELENS_ADMIN_TOKEN=replace-with-long-random-secret
-COMMERCELENS_USER_AGENT="CommerceLens/0.9 (+mailto:ops@yourcompany.com)"
+COMMERCELENS_USER_AGENT="CommerceLens (+mailto:ops@yourcompany.com)"
 COMMERCELENS_DEFAULT_TIMEOUT_SECONDS=20
 ```
 

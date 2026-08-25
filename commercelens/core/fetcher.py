@@ -5,8 +5,10 @@ import os
 import httpx
 from httpx import TimeoutException
 
+from commercelens.version import __version__
+
 DEFAULT_USER_AGENT = (
-    "CommerceLens/0.9 (+https://github.com/dipeshbabu/commerce-lens)"
+    f"CommerceLens/{__version__} (+https://github.com/dipeshbabu/commerce-lens)"
 )
 
 

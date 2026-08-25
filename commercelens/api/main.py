@@ -57,7 +57,11 @@ from commercelens.version import __version__
 API_VERSION = __version__
 LOGGER = logging.getLogger("commercelens.api")
 
-app = FastAPI(title="CommerceLens API", description="Commercial product, catalog, monitoring, alerting, matching, and price intelligence extraction for developers.", version=API_VERSION)
+app = FastAPI(
+    title="CommerceLens API",
+    description="Competitor price, availability, and catalog monitoring.",
+    version=API_VERSION,
+)
 
 
 @app.middleware("http")

@@ -1,811 +1,174 @@
 # CommerceLens
 
-Commercial product, catalog, monitoring, alerting, matching, and price intelligence extraction for developers.
+Monitor competitor prices, availability, and catalog changes without maintaining a
+collection of scraping scripts.
 
-CommerceLens turns messy e-commerce pages into structured product, listing, price-history, alert, and product-matching data using schema.org JSON-LD parsing, OpenGraph metadata, DOM heuristics, confidence scoring, catalog crawling, optional browser rendering, SQLite/Postgres snapshots, change detection, configurable alert rules, dataset connectors, persistent monitoring jobs, worker execution, API keys, tenant-scoped usage metering, and a clean Python SDK / CLI / FastAPI interface.
+[![CI](https://github.com/dipeshbabu/commerce-lens/actions/workflows/ci.yml/badge.svg)](https://github.com/dipeshbabu/commerce-lens/actions/workflows/ci.yml)
 
-> Goal: commerce-ready product intelligence, not just raw HTML.
+CommerceLens turns product and category pages into normalized commerce records, captures
+their history, and emits useful changes such as price drops, price increases, availability
+updates, and products added to or removed from a catalog.
 
-## Why CommerceLens?
+It is built for ecommerce brands, retailers, marketplaces, agencies, procurement teams,
+and developers who need commerce data they can monitor instead of raw HTML they still
+have to interpret.
 
-Most scraping tools return raw HTML, Markdown, screenshots, or brittle selector outputs. CommerceLens is designed around normalized commerce objects: product name, brand, price, currency, availability, images, description, SKU, ratings, review counts, canonical URL, listing product cards, confidence scores, extraction provenance, price history, product-level change events, alerts, cross-store product matches, persistent monitor jobs, run history, tenant-aware API keys, and metered hosted usage.
+## The workflow
 
-CommerceLens is currently in early v0.9 commercial product development. The current release focuses on product page extraction, listing/category extraction, catalog crawling, JSONL/CSV export, optional Playwright rendering for JavaScript-heavy pages, local price intelligence through SQLite-backed product snapshots, optional PostgreSQL storage for hosted deployments, config-driven alert monitoring, dataset import/export, product matching, persistent monitoring jobs, worker execution, API keys, usage events, usage summaries, and Docker deployment.
+1. Add product pages, category pages, or an existing product dataset.
+2. Extract normalized names, brands, prices, currencies, availability, images, and identifiers.
+3. Match equivalent products across stores.
+4. Run monitors on a schedule and preserve observations over time.
+5. Send important changes to Slack, email, webhooks, files, or downstream APIs.
+6. Review products, runs, failures, usage, and exports in the customer portal.
 
-## Features in v0.9
+## Common use cases
 
-- Product page extraction
-- Listing/category page extraction
-- Basic catalog crawling by following next-page links
-- Optional Playwright browser rendering
-- Rendered HTML snapshot saving
-- Full-page screenshot saving
-- JSON-LD / schema.org Product parsing
-- OpenGraph metadata fallback
-- DOM heuristic fallback
-- Shopify product adapter
-- Product card extraction
-- Pagination discovery
-- Price and currency normalization
-- Availability normalization
-- Image extraction
-- Field-level confidence scores
-- Source provenance for extracted fields
-- SQLite product snapshot storage
-- Optional PostgreSQL product snapshot backend
-- Storage backend abstraction for hosted deployments
-- Product identity keys
-- Price history lookup
-- Price drop detection
-- Price increase detection
-- Availability change detection
-- Back-in-stock detection
-- Batch product monitoring
-- Config-driven alert rules
-- Alert delivery to stdout, file, webhook, Slack, and email
-- Dry-run alert payload generation
-- GitHub Actions scheduled monitoring workflow
-- Dataset import from txt, CSV, JSON, and JSONL
-- Dataset export to CSV, JSON, and JSONL
-- Transparent product matching across datasets/domains
-- Stable webhook envelopes for alert events
-- Persistent monitoring jobs
-- Interval and manual job schedules
-- Worker tick and long-running worker loop
-- Job run history with status, errors, durations, events, deliveries, and warnings
-- Optional API key authentication for hosted deployments
-- Tenant context through account_id, project_id, owner, and api_key_id
-- Usage event logging and usage summaries
-- API-key monthly domain quotas
-- Stripe subscription webhook plan sync
-- Stripe Checkout Session creation for subscription onboarding
-- Customer-facing portal for jobs, runs, extractions, usage, quotas, and JSON exports
-- Failure classification and triage recommendations for runs and extractions
-- One-command customer onboarding for account, project, owner, API key, and portal URL
-- Per-domain worker concurrency controls
-- SQLite or Postgres job/run/API-key/usage store
-- Docker and docker-compose deployment files
-- Python SDK
-- CLI
-- FastAPI API
-- Lightweight default install; browser, data, and Postgres support are optional
+### Competitor monitoring
 
-## Installation
+Track price and stock movement for products that compete with your catalog.
 
-Static extraction, price monitoring, matching, alerts, and worker jobs:
+### Catalog intelligence
+
+Detect products that appeared, disappeared, or changed between catalog captures.
+
+### Pricing and availability alerts
+
+Notify a team when a product crosses a price threshold, changes availability, or returns
+to stock.
+
+### Cross store product comparison
+
+Normalize product datasets and match equivalent products whose titles differ across stores.
+
+## Quickstart
+
+CommerceLens is not currently published as an official package. Install it from a repository
+checkout:
 
 ```bash
-pip install -e .
+git clone https://github.com/dipeshbabu/commerce-lens.git
+cd commerce-lens
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
 ```
 
-Browser rendering support:
+Run a deterministic extraction against a checked in fixture:
 
 ```bash
-pip install -e ".[browser]"
+commercelens html tests/fixtures/benchmarks/product_jsonld.html
+```
+
+Extract a public product page:
+
+```bash
+commercelens product https://store.example/products/sample
+```
+
+Monitor that page and store observations locally:
+
+```bash
+commercelens monitor https://store.example/products/sample --db prices.db
+```
+
+Some sites require browser rendering:
+
+```bash
+python -m pip install -e ".[browser]"
 playwright install chromium
+commercelens product https://store.example/products/sample --render
 ```
 
-PostgreSQL backend support:
+See the [quickstart guide](docs/quickstart.md) for monitoring rules, local portal setup, and
+hosted deployment paths.
 
-```bash
-pip install -e ".[postgres]"
-```
-
-Or install from requirements:
-
-```bash
-pip install -r requirements.txt
-```
-
-## Hosted backend quickstart
-
-For local development, CommerceLens uses SQLite by default. For hosted deployments, use Postgres for jobs, runs, API keys, and usage metering:
-
-```bash
-export COMMERCELENS_STORE_BACKEND=postgres
-export COMMERCELENS_DATABASE_URL="postgresql://user:password@localhost:5432/commercelens"
-export COMMERCELENS_REQUIRE_API_KEY=true
-```
-
-Create a tenant-scoped API key:
-
-```bash
-commercelens create-api-key \
-  --name "demo customer" \
-  --account-id acct_demo \
-  --project-id proj_default \
-  --owner demo@example.com
-```
-
-Use the returned token with hosted routes:
-
-```bash
-curl -X POST http://127.0.0.1:8000/v1/extract/product \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: cl_REPLACE_WITH_TOKEN" \
-  -d '{"url":"https://example.com/products/sample"}'
-```
-
-Inspect usage:
-
-```bash
-commercelens usage-summary --account-id acct_demo --project-id proj_default
-commercelens usage-events --account-id acct_demo --project-id proj_default --limit 20
-```
-
-Run API and worker processes:
-
-```bash
-commercelens serve --host 0.0.0.0 --port 8000
-commercelens worker --poll-seconds 60
-```
-
-For a hosted deployment, use the checked-in Render Blueprint:
-
-```text
-render.yaml
-```
-
-It creates a Docker-based API service, a Docker-based worker service, and a
-managed Postgres database. See `docs/render.md` for the deployment and
-smoke-test steps. After deployment, run:
-
-```bash
-python scripts/smoke_deploy.py \
-  --base-url https://YOUR-API.onrender.com \
-  --admin-token "$ADMIN_TOKEN"
-```
-
-To include Stripe Checkout in the hosted beta smoke, pass a Stripe price ID:
-
-```bash
-python scripts/smoke_deploy.py \
-  --base-url https://YOUR-API.onrender.com \
-  --admin-token "$ADMIN_TOKEN" \
-  --stripe-price-id price_REPLACE
-```
-
-## Python SDK
-
-Extract a product page:
-
-```python
-from commercelens import extract_product
-
-result = extract_product("https://example.com/products/sample")
-print(result.product.name)
-print(result.product.price.amount)
-print(result.product.availability)
-```
-
-Monitor a product price with local SQLite:
+## Python
 
 ```python
 from commercelens import monitor_product
 
-result = monitor_product("https://example.com/products/sample", db_path="prices.db")
-print(result.product_key)
-print(result.has_change)
-print(result.change)
-```
-
-Use the hosted-ready storage abstraction:
-
-```python
-from commercelens import StorageConfig, monitor_product
-
 result = monitor_product(
-    "https://example.com/products/sample",
-    storage_config=StorageConfig(backend="sqlite", sqlite_path="prices.db"),
+    "https://store.example/products/sample",
+    db_path="prices.db",
 )
+
+if result.has_change:
+    print(result.change)
 ```
 
-Use PostgreSQL for hosted product snapshots:
+The public Python API also supports product extraction, listing extraction, catalog crawling,
+dataset import and export, product matching, alert rules, and storage backends.
 
-```python
-from commercelens import StorageConfig, monitor_product
+## Interfaces
 
-result = monitor_product(
-    "https://example.com/products/sample",
-    storage_config=StorageConfig(
-        backend="postgres",
-        postgres_dsn="postgresql://user:password@localhost:5432/commercelens",
-    ),
-)
-```
+CommerceLens can be used through:
 
-Run a monitor config and build alert payloads without delivering them:
+* A Python library for applications and data workflows
+* A command line interface for local jobs and automation
+* A FastAPI service for hosted integrations
+* A background worker for persistent monitoring jobs
+* A tenant scoped portal for monitoring and operational visibility
 
-```python
-from commercelens import load_monitor_config, run_monitor_config
-
-config = load_monitor_config("examples/monitor_config.json")
-result = run_monitor_config(config, dry_run=True)
-print(result.events)
-```
-
-Match products across datasets:
-
-```python
-from commercelens import ProductRecord, match_products
-
-left = [ProductRecord(name="Nike Air Max 90", brand="Nike", amount=120, currency="USD")]
-right = [ProductRecord(name="Nike Air Max 90 Shoes", brand="Nike", amount=125, currency="USD")]
-
-matches = match_products(left, right, threshold=0.72)
-print(matches.matches)
-```
-
-Read price history:
-
-```python
-from commercelens import PriceSnapshotStore
-
-store = PriceSnapshotStore("prices.db")
-history = store.history("PRODUCT_KEY_FROM_MONITOR_RESULT")
-for snapshot in history:
-    print(snapshot.captured_at, snapshot.amount, snapshot.currency, snapshot.availability)
-```
-
-Extract a listing/category page:
-
-```python
-from commercelens import extract_listing
-
-listing = extract_listing("https://example.com/collections/shoes")
-for item in listing.products:
-    print(item.name, item.price, item.url)
-```
-
-Crawl a catalog by following next-page links:
-
-```python
-from commercelens import crawl_catalog
-
-catalog = crawl_catalog("https://example.com/collections/shoes", max_pages=5)
-print(catalog.product_count)
-```
-
-Render dynamic pages:
-
-```python
-from commercelens import extract_product
-
-result = extract_product(
-    "https://example.com/products/sample",
-    render=True,
-    screenshot_path="debug/product.png",
-    html_snapshot_path="debug/product.html",
-)
-```
-
-## CLI
-
-Extract from a product URL:
+Run `commercelens --help` for the complete command list. Start the API with:
 
 ```bash
-commercelens product https://example.com/products/sample
+commercelens serve --host 127.0.0.1 --port 8000
 ```
 
-Render first, then extract:
-
-```bash
-commercelens product https://example.com/products/sample \
-  --render \
-  --screenshot debug/product.png \
-  --html-snapshot debug/product.html
-```
-
-Save a price snapshot and detect changes:
-
-```bash
-commercelens monitor https://example.com/products/sample --db prices.db
-```
-
-Batch monitor many products:
-
-```bash
-commercelens monitor-batch examples/products.txt --db prices.db --out monitor_result.json
-```
-
-Create an alert config:
-
-```bash
-commercelens init-config commercelens.monitor.json
-```
-
-Run alerts in dry-run mode:
-
-```bash
-commercelens run commercelens.monitor.json --dry-run
-```
-
-Run alerts and deliver them:
-
-```bash
-commercelens run commercelens.monitor.json
-```
-
-Create a persistent monitoring job:
-
-```bash
-commercelens create-job commercelens.monitor.json \
-  --name "Watch competitor prices" \
-  --interval-minutes 360 \
-  --account-id acct_demo \
-  --project-id proj_default
-```
-
-List jobs and runs:
-
-```bash
-commercelens list-jobs --account-id acct_demo --project-id proj_default
-commercelens list-runs --account-id acct_demo --project-id proj_default
-```
-
-Run a job immediately:
-
-```bash
-commercelens run-job job_xxxxxxxxxxxxxxxx --dry-run
-```
-
-Execute due jobs once:
-
-```bash
-commercelens worker-tick --dry-run --domain-concurrency 1
-```
-
-Run the worker loop:
-
-```bash
-commercelens worker --poll-seconds 60 --domain-concurrency 2
-```
-
-Create an API key for hosted deployments:
-
-```bash
-commercelens create-api-key --name "local dev" --account-id acct_demo --project-id proj_default
-```
-
-Create a complete customer workspace:
-
-```bash
-commercelens onboard-customer \
-  --account-name "Acme Retail" \
-  --owner-email ops@acme.test \
-  --project-name "Competitor Watch" \
-  --billing-plan team \
-  --domain-quota example.com=500
-```
-
-Create a key with monthly domain budgets:
-
-```bash
-commercelens create-api-key \
-  --name "domain-limited" \
-  --account-id acct_demo \
-  --project-id proj_default \
-  --domain-quota example.com=5000 \
-  --domain-quota "*=250"
-```
-
-Summarize usage:
-
-```bash
-commercelens usage-summary --account-id acct_demo --project-id proj_default
-commercelens usage-events --account-id acct_demo --project-id proj_default --metric product_extract
-```
-
-Export latest tracked products:
-
-```bash
-commercelens export-history --db prices.db --out latest_products.jsonl
-commercelens export-history --db prices.db --out latest_products.csv
-```
-
-Load and normalize a product dataset:
-
-```bash
-commercelens load-records examples/products_a.csv --out normalized.json
-```
-
-Match products across two datasets:
-
-```bash
-commercelens match-records examples/products_a.csv examples/products_b.csv --threshold 0.72 --out matches.json
-```
-
-Build product identity clusters across a single dataset:
-
-```bash
-commercelens identity-graph examples/products_a.csv --threshold 0.72 --out identity.json
-```
-
-Diff two catalog exports:
-
-```bash
-commercelens catalog-diff before.csv after.csv --out catalog_changes.json
-```
-
-Summarize competitive price distribution:
-
-```bash
-commercelens price-summary examples/products_a.csv --out price_summary.json
-```
-
-Show price history for a product key:
-
-```bash
-commercelens history PRODUCT_KEY_FROM_MONITOR_RESULT --db prices.db
-```
-
-Show latest detected changes across tracked products:
-
-```bash
-commercelens changes --db prices.db
-```
-
-Extract product cards from a listing page:
-
-```bash
-commercelens listing https://example.com/collections/shoes
-```
-
-Export listing products as JSONL or CSV:
-
-```bash
-commercelens listing https://example.com/collections/shoes --format jsonl --out products.jsonl
-commercelens listing https://example.com/collections/shoes --format csv --out products.csv
-```
-
-Crawl a catalog:
-
-```bash
-commercelens crawl https://example.com/collections/shoes --max-pages 5 --format jsonl --out catalog.jsonl
-```
-
-Run the API server:
-
-```bash
-commercelens serve --host 0.0.0.0 --port 8000 --reload
-```
-
-## Alert config example
-
-```json
-{
-  "db_path": "prices.db",
-  "render": false,
-  "targets": [
-    {"url": "https://example.com/products/sample", "tags": ["demo"]}
-  ],
-  "rules": [
-    {
-      "name": "major-price-drop",
-      "condition": "percent_drop_at_least",
-      "threshold": 10,
-      "destinations": [
-        {"type": "stdout"},
-        {"type": "file", "file_path": "alerts.jsonl"}
-      ]
-    }
-  ]
-}
-```
-
-Supported alert conditions include `any_change`, `price_drop`, `price_increase`, `back_in_stock`, `availability_change`, `price_below`, `price_above`, `percent_drop_at_least`, and `percent_increase_at_least`.
-
-Supported destinations include `stdout`, `file`, `webhook`, `slack`, and `email`.
-
-See `docs/alerts.md` for the complete alert monitoring guide.
-
-## Hosted worker service
-
-CommerceLens can run as a lightweight hosted monitoring service.
-
-Run with Docker Compose:
-
-```bash
-docker compose up --build
-```
-
-The compose stack runs two processes:
-
-```text
-api:    FastAPI server on port 8000
-worker: background worker loop polling due jobs
-```
-
-See `docs/worker-service.md` for the complete hosted service guide.
-
-## Hosted data layer and connectors
-
-See `docs/hosted_data_layer.md` for full examples covering:
-
-- SQLite and PostgreSQL storage backends
-- monitoring with a backend object
-- dataset import/export
-- product matching
-- webhook envelopes
-- API examples
-
-## FastAPI API
-
-Start the server:
-
-```bash
-uvicorn commercelens.api.main:app --reload
-```
-
-Health check:
-
-```bash
-curl http://127.0.0.1:8000/health
-```
-
-Extract a product:
-
-```bash
-curl -X POST http://127.0.0.1:8000/v1/extract/product \
-  -H "Content-Type: application/json" \
-  -d '{"url":"https://example.com/products/sample"}'
-```
-
-Monitor a product:
-
-```bash
-curl -X POST http://127.0.0.1:8000/v1/monitor/product \
-  -H "Content-Type: application/json" \
-  -d '{"url":"https://example.com/products/sample", "db_path":"prices.db"}'
-```
-
-Run alert monitoring with inline config:
-
-```bash
-curl -X POST http://127.0.0.1:8000/v1/alerts/run \
-  -H "Content-Type: application/json" \
-  -d '{
-    "dry_run": true,
-    "config": {
-      "db_path": "prices.db",
-      "targets": [{"url": "https://example.com/products/sample"}],
-      "rules": [{"name": "any", "condition": "any_change", "destinations": [{"type": "stdout"}]}]
-    }
-  }'
-```
-
-Create a persistent monitoring job:
-
-```bash
-curl -X POST http://127.0.0.1:8000/v1/jobs \
-  -H "Content-Type: application/json" \
-  -d @job.json
-```
-
-Run due jobs once:
-
-```bash
-curl -X POST "http://127.0.0.1:8000/v1/worker/tick?dry_run=true"
-```
-
-List tenant usage:
-
-```bash
-curl http://127.0.0.1:8000/v1/usage/summary \
-  -H "X-API-Key: cl_REPLACE_WITH_TOKEN"
-
-curl http://127.0.0.1:8000/v1/usage/events?limit=20 \
-  -H "X-API-Key: cl_REPLACE_WITH_TOKEN"
-```
-
-Fetch a customer dashboard summary:
-
-```bash
-curl http://127.0.0.1:8000/v1/dashboard/summary \
-  -H "X-API-Key: cl_REPLACE_WITH_TOKEN"
-```
-
-Fetch customer-visible failure triage:
-
-```bash
-curl http://127.0.0.1:8000/v1/issues \
-  -H "X-API-Key: cl_REPLACE_WITH_TOKEN"
-```
-
-Fetch operator failure counters:
-
-```bash
-curl http://127.0.0.1:8000/v1/ops/failure-metrics \
-  -H "X-Admin-Token: $COMMERCELENS_ADMIN_TOKEN"
-```
-
-Open the customer portal:
-
-```text
-http://127.0.0.1:8000/portal?api_key=cl_REPLACE_WITH_TOKEN
-```
-
-The portal provides tenant-scoped job, run, extraction, usage, quota, alert
-activity, and JSON export views. See `docs/customer_portal.md`.
-
-Create a Stripe Checkout Session for an account:
-
-```bash
-curl -X POST http://127.0.0.1:8000/v1/billing/stripe/checkout-session \
-  -H "X-Admin-Token: $COMMERCELENS_ADMIN_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "account_id": "acct_demo",
-    "price_id": "price_REPLACE",
-    "success_url": "https://app.example.com/billing/success",
-    "cancel_url": "https://app.example.com/billing/cancel",
-    "billing_plan": "team"
-  }'
-```
-
-Match product records:
-
-```bash
-curl -X POST http://127.0.0.1:8000/v1/match/products \
-  -H "Content-Type: application/json" \
-  -d '{
-    "left": [{"name": "Nike Air Max 90", "brand": "Nike", "amount": 120, "currency": "USD"}],
-    "right": [{"name": "Nike Air Max 90 Shoes", "brand": "Nike", "amount": 125, "currency": "USD"}],
-    "threshold": 0.72
-  }'
-```
-
-Build product identity clusters:
-
-```bash
-curl -X POST http://127.0.0.1:8000/v1/identity/graph \
-  -H "Content-Type: application/json" \
-  -d '{"records":[{"name":"Nike Air Max 90","brand":"Nike"},{"name":"Nike Air Max 90 Shoes","brand":"Nike"}]}'
-```
-
-Diff two catalogs:
-
-```bash
-curl -X POST http://127.0.0.1:8000/v1/catalog/diff \
-  -H "Content-Type: application/json" \
-  -d '{"before":[{"url":"https://shop.test/a","amount":10}],"after":[{"url":"https://shop.test/a","amount":8}]}'
-```
-
-Summarize competitive prices:
-
-```bash
-curl -X POST http://127.0.0.1:8000/v1/intelligence/price-summary \
-  -H "Content-Type: application/json" \
-  -d '{"records":[{"name":"A","amount":10,"currency":"USD"},{"name":"B","amount":20,"currency":"USD"}]}'
-```
-
-Run alert monitoring from a file path:
-
-```bash
-curl -X POST http://127.0.0.1:8000/v1/alerts/run-file \
-  -H "Content-Type: application/json" \
-  -d '{"path":"examples/monitor_config.json", "dry_run": true}'
-```
+Interactive API documentation is then available at `http://127.0.0.1:8000/docs`.
+
+## Extraction strategy
+
+CommerceLens prefers structured commerce signals and falls back when necessary:
+
+1. Schema.org Product and JSON LD
+2. Store specific adapters such as Shopify
+3. OpenGraph metadata
+4. DOM heuristics
+5. Optional Playwright rendering for dynamic pages
+
+Every extracted field can include confidence and provenance so consumers can distinguish
+strong structured data from heuristic fallbacks.
+
+## Documentation
+
+Start with the [documentation index](docs/README.md).
+
+* [Quickstart](docs/quickstart.md)
+* [Python API](docs/python-sdk.md)
+* [Command line interface](docs/cli.md)
+* [REST API](docs/api.md)
+* [Alerts](docs/alerts.md)
+* [Browser rendering](docs/render.md)
+* [Customer portal](docs/customer_portal.md)
+* [Worker service](docs/worker-service.md)
+* [Hosted data layer](docs/hosted_data_layer.md)
+* [Production deployment](docs/production.md)
+* [Extraction quality](docs/extraction_quality.md)
 
 ## Development
 
 ```bash
-pip install -e ".[dev]"
-pytest
+python -m pip install -e ".[dev]"
 ruff check .
+pytest -q
 ```
 
-To test browser rendering manually:
+Tests use local HTML fixtures and temporary databases. Live commerce pages should not be
+required for the default test suite.
 
-```bash
-pip install -e ".[browser]"
-playwright install chromium
-commercelens product https://example.com/products/sample --render
-```
+## Project status
 
-To test price monitoring and alerts locally:
+CommerceLens is in beta. The extraction engine, monitoring jobs, alerts, matching, API,
+worker, storage backends, and portal are implemented, but reliability varies across commerce
+sites. Review confidence and failure information before using extracted data for automated
+business decisions.
 
-```bash
-commercelens monitor https://example.com/products/sample --db prices.db
-commercelens history PRODUCT_KEY_FROM_MONITOR_RESULT --db prices.db
-commercelens init-config commercelens.monitor.json
-commercelens run commercelens.monitor.json --dry-run
-```
-
-To test product matching:
-
-```bash
-commercelens match-records examples/products_a.csv examples/products_b.csv --threshold 0.72
-```
-
-To run local extraction quality fixtures:
-
-```bash
-commercelens benchmark-fixtures
-```
-
-To test hosted jobs and usage locally with SQLite:
-
-```bash
-commercelens init-config commercelens.monitor.json
-commercelens create-api-key --name "demo" --account-id acct_demo --project-id proj_default
-commercelens create-job commercelens.monitor.json --name "demo" --interval-minutes 1 --account-id acct_demo --project-id proj_default
-commercelens worker-tick --dry-run
-commercelens usage-summary --account-id acct_demo --project-id proj_default
-commercelens list-runs --account-id acct_demo --project-id proj_default
-```
-
-## Product roadmap
-
-### v0.1: Product extraction core
-
-- Schema-first product extraction
-- JSON-LD parser
-- OpenGraph fallback
-- DOM fallback
-- CLI and FastAPI surface
-- Basic tests
-
-### v0.2: Catalog and listing extraction
-
-- Category/listing page extraction
-- Product card extraction
-- Pagination discovery
-- URL normalization
-- JSONL/CSV export
-
-### v0.3: Browser rendering and dynamic pages
-
-- Optional Playwright renderer
-- JavaScript-heavy product page support
-- Screenshot/debug artifacts
-
-### v0.4: Price intelligence
-
-- SQLite product snapshots
-- Price history
-- Change detection
-- Back-in-stock detection
-- Batch monitoring
-
-### v0.5: Alerts and scheduled monitoring
-
-- Alert rules
-- Webhook, Slack, email, file, and stdout delivery
-- Dry-run alert payloads
-- GitHub Actions scheduled monitoring
-- API and SDK alert runner
-
-### v0.6: Hosted-ready data layer and connectors
-
-- Storage backend abstraction
-- Optional PostgreSQL snapshot backend
-- Product matching across domains
-- Dataset import/export connectors
-- Webhook event envelopes
-
-### v0.7: Worker queue and hosted monitoring service
-
-- Persistent monitoring jobs
-- Interval and manual schedules
-- Job run history
-- Worker tick and worker loop
-- retry/backoff policies
-- API keys
-- hosted deployment template
-
-### v0.8: Production hosted backend
-
-- Tenant-aware API key context
-- Postgres job/run/API-key/usage store
-- Metered extraction, crawling, matching, monitoring, and alert routes
-- Usage event and usage summary endpoints
-- Hosted CLI workflow for API keys, jobs, workers, and usage
-
-## Positioning
-
-CommerceLens is not trying to be a generic scraper first. It is a commerce data engine: a focused toolkit for product, catalog, monitoring, alerting, matching, scheduled jobs, usage metering, and price intelligence.
+Operators are responsible for respecting website terms, access controls, crawl rates, privacy
+requirements, and applicable law.
 
 ## License
 
-Proprietary. This codebase is intended for a private hosted CommerceLens product unless a separate written license grants other rights.
+See [LICENSE](LICENSE). The licensing and contributor governance work is tracked in
+[issue #14](https://github.com/dipeshbabu/commerce-lens/issues/14).
