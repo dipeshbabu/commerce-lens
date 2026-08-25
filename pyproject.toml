@@ -1,7 +1,7 @@
 [project]
 name = "commercelens"
 version = "0.9.0"
-description = "Commercial product, catalog, monitoring, alerting, matching, and price intelligence extraction for developers."
+description = "Competitor price, availability, and catalog monitoring for commerce teams and developers."
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Dipesh Babu" }]
