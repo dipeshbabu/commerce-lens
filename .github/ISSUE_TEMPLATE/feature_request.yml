@@ -1,0 +1,52 @@
+name: Feature request
+description: Propose a user outcome or repository improvement
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Who has this problem, when does it occur, and why does it matter?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe observable behavior and how a user would benefit.
+    validations:
+      required: true
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Proposed user workflow
+      description: Show how a person would use the capability from start to finish.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe workarounds or narrower solutions you considered.
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List concrete outcomes that would make the issue complete.
+      placeholder: |
+        - [ ] A user can ...
+        - [ ] Tests cover ...
+        - [ ] Documentation explains ...
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I searched existing issues and roadmap items.
+          required: true
+        - label: This request describes a problem and user outcome, not only a preferred implementation.
+          required: true

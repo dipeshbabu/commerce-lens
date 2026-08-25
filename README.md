@@ -149,6 +149,10 @@ Start with the [documentation index](docs/README.md).
 
 ## Development
 
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before proposing a substantial change. Project
+interactions follow the [Code of Conduct](CODE_OF_CONDUCT.md), support paths are documented in
+[SUPPORT.md](SUPPORT.md), and vulnerabilities must follow [SECURITY.md](SECURITY.md).
+
 ```bash
 python -m pip install -e ".[dev]"
 ruff check .

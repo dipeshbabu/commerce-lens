@@ -1,7 +1,8 @@
 # Security Policy
 
-CommerceLens is a private commercial codebase. Treat all credentials, customer
-URLs, extracted product data, run logs, and alert payloads as confidential.
+CommerceLens has a public source repository and is currently distributed under a
+proprietary license. Treat all credentials, customer URLs, extracted product data, run logs,
+and alert payloads as confidential.
 
 ## Supported Version
 
@@ -9,8 +10,11 @@ Only the current production branch is supported for security fixes.
 
 ## Reporting
 
-Report suspected security issues directly to the product owner. Do not open
-public issues with secrets, customer data, exploit details, or production URLs.
+Report suspected security issues with GitHub's
+[private vulnerability reporting](https://github.com/dipeshbabu/commerce-lens/security/advisories/new)
+flow. Do not open public issues with secrets, customer data, exploit details, or production
+URLs. If private reporting is unavailable, contact the repository owner through the contact
+method published on their GitHub profile before sharing details.
 
 Include:
 
