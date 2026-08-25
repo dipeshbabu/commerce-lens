@@ -19,8 +19,8 @@ The command creates:
 - successful and failed job-run history
 - usage, quota, alert, and extraction records
 
-The returned JSON includes the one-time API token and a `portal_path` value.
-Run the API against the same database and open that path:
+The returned JSON includes the one-time API token and `/portal/login` as the
+`portal_path`. Run the API against the same database and open that path:
 
 ```bash
 set COMMERCELENS_JOBS_DB=commercelens_demo.db
@@ -29,8 +29,11 @@ commercelens serve --host 127.0.0.1 --port 8000
 ```
 
 ```text
-http://127.0.0.1:8000/portal?api_key=cl_REPLACE_WITH_TOKEN
+http://localhost:8000/portal/login
 ```
+
+Enter the returned API token in the sign in form. CommerceLens exchanges it for
+an expiring browser session, so the token does not appear in portal URLs.
 
 Use this workspace when preparing product screenshots, customer demos, and
 regression checks for the customer portal.

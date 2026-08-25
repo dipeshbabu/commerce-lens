@@ -4,6 +4,8 @@
 
 - Relicensed the project under the Apache License 2.0 and synchronized package metadata,
   contribution terms, security guidance, and release documentation.
+- Replaced API keys in customer portal URLs with expiring, revocable, tenant scoped browser
+  sessions, secure cookies, and CSRF protected session actions.
 
 ## 0.9.0
 

@@ -169,7 +169,7 @@ def seed_demo_workspace(store: JobStore) -> dict:
         "project": project.model_dump(mode="json", exclude_none=True),
         "api_key": key_result.key.model_dump(mode="json", exclude_none=True),
         "token": key_result.token,
-        "portal_path": f"/portal?api_key={key_result.token}",
+        "portal_path": "/portal/login",
         "job_id": job.id,
         "run_ids": [succeeded_run.id, failed_run.id],
     }

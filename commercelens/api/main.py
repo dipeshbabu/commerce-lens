@@ -11,20 +11,35 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
+from starlette.responses import Response
 
 from commercelens.alerts.runner import MonitorRunResult, run_monitor_config, run_monitor_config_file
 from commercelens.api.auth import (
     get_job_store,
-    require_account_active,
     require_admin_access,
     require_admin_token,
     require_api_key,
 )
 from commercelens.api.domain_limits import require_domain_quota, url_domain
+from commercelens.api.portal_auth import (
+    SESSION_COOKIE_NAME,
+    PortalSessionContext,
+    absolute_timeout_seconds,
+    authenticate_portal_api_key,
+    clear_portal_cookies,
+    new_login_csrf_token,
+    require_login_csrf,
+    require_portal_csrf,
+    require_portal_session,
+    set_login_csrf_cookie,
+    set_portal_cookies,
+    set_private_response_headers,
+)
 from commercelens.api.presentation import (
     dashboard_shell as _dashboard_shell,
     escape_html as _esc,
     portal_href as _portal_href,
+    portal_login as _portal_login,
     portal_shell as _portal_shell,
     preformatted_json as _pre_json,
     table as _table,
@@ -287,32 +302,16 @@ def _dashboard_action(path: str, request: Request, **params: object) -> str:
     return f"{path}{suffix}"
 
 
-def _portal_key_query(request: Request) -> str:
-    token = request.query_params.get("api_key")
-    return "?" + urlencode({"api_key": token}) if token else ""
-
-
-def _require_portal_key(request: Request, store: JobStore) -> ApiKeyRecord:
-    token = request.headers.get("X-API-Key") or request.query_params.get("api_key")
-    if not token:
-        raise HTTPException(
-            status_code=401, detail="Missing api_key query parameter or X-API-Key header."
-        )
-    key = store.verify_api_key(token)
-    if not key:
-        raise HTTPException(status_code=401, detail="Invalid API key.")
-    require_account_active(store, key)
-    require_scope(key, "usage:read")
-    require_scope(key, "jobs:read")
-    require_scope(key, "runs:read")
-    require_scope(key, "extractions:read")
-    return key
-
-
 async def _urlencoded_form(request: Request) -> dict[str, str]:
     raw = (await request.body()).decode("utf-8")
     parsed = parse_qs(raw, keep_blank_values=True)
     return {key: values[-1] for key, values in parsed.items() if values}
+
+
+def _portal_page(title: str, content: str, context: PortalSessionContext) -> HTMLResponse:
+    response = HTMLResponse(_portal_shell(title, content, csrf_token=context.csrf_token))
+    set_private_response_headers(response)
+    return response
 
 
 def _recent_issues(
@@ -558,7 +557,7 @@ def onboarding_endpoint(
         member=member,
         api_key=key_result.key,
         token=key_result.token,
-        portal_path=f"/portal?api_key={key_result.token}",
+        portal_path="/portal/login",
     )
 
 
@@ -985,10 +984,86 @@ def extraction_dashboard(
     return HTMLResponse(_dashboard_shell("Extraction", content, token_query=token_query))
 
 
+@app.get("/portal/login", response_class=HTMLResponse)
+def customer_portal_login_page() -> HTMLResponse:
+    csrf_token = new_login_csrf_token()
+    response = HTMLResponse(_portal_login(csrf_token))
+    set_login_csrf_cookie(response, csrf_token)
+    return response
+
+
+@app.post("/portal/login")
+async def customer_portal_login(
+    request: Request,
+    store: JobStore = Depends(get_job_store),
+) -> Response:
+    form = await _urlencoded_form(request)
+    login_csrf_token = form.get("csrf_token")
+    require_login_csrf(request, login_csrf_token)
+    token = form.get("api_key", "").strip()
+    try:
+        key = authenticate_portal_api_key(store, token)
+    except HTTPException as exc:
+        login_response = HTMLResponse(
+            _portal_login(
+                login_csrf_token or "",
+                "The supplied key could not sign in to this portal.",
+            ),
+            status_code=exc.status_code,
+        )
+        set_private_response_headers(login_response)
+        return login_response
+    timeout = absolute_timeout_seconds()
+    result = store.create_portal_session(key, absolute_timeout_seconds=timeout)
+    redirect = RedirectResponse("/portal", status_code=303)
+    set_portal_cookies(redirect, result.token, result.csrf_token, max_age=timeout)
+    return redirect
+
+
+@app.post("/portal/logout")
+async def customer_portal_logout(
+    request: Request,
+    store: JobStore = Depends(get_job_store),
+) -> RedirectResponse:
+    context = require_portal_session(request, store)
+    form = await _urlencoded_form(request)
+    require_portal_csrf(store, context, form.get("csrf_token"))
+    store.revoke_portal_session(context.session.id)
+    response = RedirectResponse("/portal/login", status_code=303)
+    clear_portal_cookies(response)
+    return response
+
+
+@app.post("/portal/session/rotate")
+async def customer_portal_rotate_session(
+    request: Request,
+    store: JobStore = Depends(get_job_store),
+) -> RedirectResponse:
+    context = require_portal_session(request, store)
+    form = await _urlencoded_form(request)
+    require_portal_csrf(store, context, form.get("csrf_token"))
+    timeout = absolute_timeout_seconds()
+    result = store.rotate_portal_session(
+        context.session,
+        context.key,
+        absolute_timeout_seconds=timeout,
+    )
+    response = RedirectResponse("/portal", status_code=303)
+    set_portal_cookies(response, result.token, result.csrf_token, max_age=timeout)
+    return response
+
+
 @app.get("/portal", response_class=HTMLResponse)
-def customer_portal(request: Request, store: JobStore = Depends(get_job_store)) -> HTMLResponse:
-    key = _require_portal_key(request, store)
-    token_query = _portal_key_query(request)
+def customer_portal(
+    request: Request,
+    store: JobStore = Depends(get_job_store),
+) -> Response:
+    if not request.cookies.get(SESSION_COOKIE_NAME):
+        response = RedirectResponse("/portal/login", status_code=303)
+        set_private_response_headers(response)
+        return response
+    context = require_portal_session(request, store)
+    key = context.key
     account_id = key.account_id
     project_id = key.project_id
     jobs = store.list_jobs(limit=25, account_id=account_id, project_id=project_id)
@@ -1001,7 +1076,7 @@ def customer_portal(request: Request, store: JobStore = Depends(get_job_store)) 
     target_rows = [
         [
             _esc(target.url),
-            f"<a href='{_portal_href(f'/portal/jobs/{_esc(target.job_id)}', token_query)}'>{_esc(target.job_name)}</a>",
+            f"<a href='{_portal_href(f'/portal/jobs/{_esc(target.job_id)}')}'>{_esc(target.job_name)}</a>",
             _esc(target.job_status),
             _esc("yes" if target.render else "no"),
             _esc(", ".join(target.tags)),
@@ -1012,7 +1087,7 @@ def customer_portal(request: Request, store: JobStore = Depends(get_job_store)) 
     ]
     job_rows = [
         [
-            f"<a href='{_portal_href(f'/portal/jobs/{_esc(job.id)}', token_query)}'><code>{_esc(job.id)}</code></a>",
+            f"<a href='{_portal_href(f'/portal/jobs/{_esc(job.id)}')}'><code>{_esc(job.id)}</code></a>",
             _esc(job.name),
             _esc(job.status.value),
             _esc(job.schedule_kind.value),
@@ -1025,8 +1100,8 @@ def customer_portal(request: Request, store: JobStore = Depends(get_job_store)) 
     ]
     run_rows = [
         [
-            f"<a href='{_portal_href(f'/portal/runs/{_esc(run.id)}', token_query)}'><code>{_esc(run.id)}</code></a>",
-            f"<a href='{_portal_href(f'/portal/jobs/{_esc(run.job_id)}', token_query)}'><code>{_esc(run.job_id)}</code></a>",
+            f"<a href='{_portal_href(f'/portal/runs/{_esc(run.id)}')}'><code>{_esc(run.id)}</code></a>",
+            f"<a href='{_portal_href(f'/portal/jobs/{_esc(run.job_id)}')}'><code>{_esc(run.job_id)}</code></a>",
             _esc(run.status.value),
             _esc(run.event_count),
             _esc(run.delivery_count),
@@ -1038,7 +1113,7 @@ def customer_portal(request: Request, store: JobStore = Depends(get_job_store)) 
     ]
     extraction_rows = [
         [
-            f"<a href='{_portal_href(f'/portal/extractions/{_esc(record.id)}', token_query)}'><code>{_esc(record.id)}</code></a>",
+            f"<a href='{_portal_href(f'/portal/extractions/{_esc(record.id)}')}'><code>{_esc(record.id)}</code></a>",
             _esc(record.kind.value),
             _esc(record.status.value),
             _esc(record.url),
@@ -1059,13 +1134,13 @@ def customer_portal(request: Request, store: JobStore = Depends(get_job_store)) 
         for item in billing.items
     ]
     export_rows = [
-        ["Jobs", f"<a href='{_portal_href('/portal/export/jobs', token_query)}'>JSON</a>"],
-        ["Runs", f"<a href='{_portal_href('/portal/export/runs', token_query)}'>JSON</a>"],
+        ["Jobs", f"<a href='{_portal_href('/portal/export/jobs')}'>JSON</a>"],
+        ["Runs", f"<a href='{_portal_href('/portal/export/runs')}'>JSON</a>"],
         [
             "Extractions",
-            f"<a href='{_portal_href('/portal/export/extractions', token_query)}'>JSON</a>",
+            f"<a href='{_portal_href('/portal/export/extractions')}'>JSON</a>",
         ],
-        ["Usage events", f"<a href='{_portal_href('/portal/export/usage', token_query)}'>JSON</a>"],
+        ["Usage events", f"<a href='{_portal_href('/portal/export/usage')}'>JSON</a>"],
     ]
     issue_rows = [
         [
@@ -1112,15 +1187,15 @@ def customer_portal(request: Request, store: JobStore = Depends(get_job_store)) 
     <h2>Quota</h2>
     {_table(["Metric", "Used", "Limit", "Remaining"], billing_rows)}
     """
-    return HTMLResponse(_portal_shell("Customer Portal", content, token_query=token_query))
+    return _portal_page("Customer Portal", content, context)
 
 
 @app.get("/portal/jobs/{job_id}", response_class=HTMLResponse)
 def customer_portal_job(
     job_id: str, request: Request, store: JobStore = Depends(get_job_store)
 ) -> HTMLResponse:
-    key = _require_portal_key(request, store)
-    token_query = _portal_key_query(request)
+    context = require_portal_session(request, store)
+    key = context.key
     job = store.get_job(job_id, account_id=key.account_id, project_id=key.project_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
@@ -1146,7 +1221,7 @@ def customer_portal_job(
     ]
     run_rows = [
         [
-            f"<a href='{_portal_href(f'/portal/runs/{_esc(run.id)}', token_query)}'><code>{_esc(run.id)}</code></a>",
+            f"<a href='{_portal_href(f'/portal/runs/{_esc(run.id)}')}'><code>{_esc(run.id)}</code></a>",
             _esc(run.status.value),
             _esc(run.event_count),
             _esc(run.delivery_count),
@@ -1178,7 +1253,7 @@ def customer_portal_job(
         ["Retry backoff seconds", _esc(job.retry_backoff_seconds)],
     ]
     content = f"""
-    <p><a href="{_portal_href("/portal", token_query)}">Overview</a></p>
+    <p><a href="{_portal_href("/portal")}">Overview</a></p>
     <h1>Monitoring Job</h1>
     {_table(["Field", "Value"], rows)}
     <h2>Targets</h2>
@@ -1188,15 +1263,15 @@ def customer_portal_job(
     <h2>Recent Runs</h2>
     {_table(["ID", "Status", "Events", "Deliveries", "Warnings", "Duration ms", "Created"], run_rows)}
     """
-    return HTMLResponse(_portal_shell(job.name, content, token_query=token_query))
+    return _portal_page(job.name, content, context)
 
 
 @app.get("/portal/runs/{run_id}", response_class=HTMLResponse)
 def customer_portal_run(
     run_id: str, request: Request, store: JobStore = Depends(get_job_store)
 ) -> HTMLResponse:
-    key = _require_portal_key(request, store)
-    token_query = _portal_key_query(request)
+    context = require_portal_session(request, store)
+    key = context.key
     run = store.get_run(run_id, account_id=key.account_id, project_id=key.project_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found.")
@@ -1204,7 +1279,7 @@ def customer_portal_run(
         ["ID", f"<code>{_esc(run.id)}</code>"],
         [
             "Job",
-            f"<a href='{_portal_href(f'/portal/jobs/{_esc(run.job_id)}', token_query)}'><code>{_esc(run.job_id)}</code></a>",
+            f"<a href='{_portal_href(f'/portal/jobs/{_esc(run.job_id)}')}'><code>{_esc(run.job_id)}</code></a>",
         ],
         ["Status", _esc(run.status.value)],
         ["Attempt", _esc(run.attempt)],
@@ -1220,21 +1295,21 @@ def customer_portal_run(
         ["Recommendation", _esc(run.recommendation)],
     ]
     content = f"""
-    <p><a href="{_portal_href("/portal", token_query)}">Overview</a></p>
+    <p><a href="{_portal_href("/portal")}">Overview</a></p>
     <h1>Job Run</h1>
     {_table(["Field", "Value"], rows)}
     <h2>Result</h2>
     {_pre_json(run.result or {})}
     """
-    return HTMLResponse(_portal_shell("Job Run", content, token_query=token_query))
+    return _portal_page("Job Run", content, context)
 
 
 @app.get("/portal/extractions/{extraction_id}", response_class=HTMLResponse)
 def customer_portal_extraction(
     extraction_id: str, request: Request, store: JobStore = Depends(get_job_store)
 ) -> HTMLResponse:
-    key = _require_portal_key(request, store)
-    token_query = _portal_key_query(request)
+    context = require_portal_session(request, store)
+    key = context.key
     record = store.get_extraction(
         extraction_id, account_id=key.account_id, project_id=key.project_id
     )
@@ -1265,7 +1340,7 @@ def customer_portal_extraction(
         else []
     )
     content = f"""
-    <p><a href="{_portal_href("/portal", token_query)}">Overview</a></p>
+    <p><a href="{_portal_href("/portal")}">Overview</a></p>
     <h1>Extraction</h1>
     {_table(["Field", "Value"], rows)}
     <h2>Product Summary</h2>
@@ -1273,14 +1348,15 @@ def customer_portal_extraction(
     <h2>Payload</h2>
     {_pre_json(record.payload or {})}
     """
-    return HTMLResponse(_portal_shell("Extraction", content, token_query=token_query))
+    return _portal_page("Extraction", content, context)
 
 
 @app.get("/portal/export/{resource}")
 def customer_portal_export(
     resource: str, request: Request, store: JobStore = Depends(get_job_store)
 ) -> JSONResponse:
-    key = _require_portal_key(request, store)
+    context = require_portal_session(request, store)
+    key = context.key
     account_id = key.account_id
     project_id = key.project_id
     if resource == "jobs":
@@ -1309,7 +1385,7 @@ def customer_portal_export(
         ]
     else:
         raise HTTPException(status_code=404, detail="Export not found.")
-    return JSONResponse(
+    response = JSONResponse(
         content={
             "account_id": account_id,
             "project_id": project_id,
@@ -1318,6 +1394,8 @@ def customer_portal_export(
         },
         headers={"Content-Disposition": f'attachment; filename="commercelens-{resource}.json"'},
     )
+    set_private_response_headers(response)
+    return response
 
 
 @app.post("/v1/extract/product", response_model=ProductExtractionResult)

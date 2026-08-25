@@ -108,7 +108,7 @@ def test_onboarding_creates_customer_workspace(monkeypatch, tmp_path: Path) -> N
     assert payload["project"]["name"] == "Competitor Watch"
     assert payload["member"]["email"] == "owner@acme.test"
     assert payload["api_key"]["billing_plan"] == "team"
-    assert payload["portal_path"].startswith("/portal?api_key=cl_")
+    assert payload["portal_path"] == "/portal/login"
 
 
 def test_suspended_account_blocks_api_key(monkeypatch, tmp_path: Path) -> None:
@@ -118,10 +118,17 @@ def test_suspended_account_blocks_api_key(monkeypatch, tmp_path: Path) -> None:
     store = JobStore(tmp_path / "jobs.db")
     account = store.create_account(AccountCreate(name="Acme", status=AccountStatus.suspended))
     key = store.create_api_key(ApiKeyCreate(name="customer", account_id=account.id, scopes=["*"]))
-    client = TestClient(app)
+    client = TestClient(app, base_url="https://testserver")
 
     response = client.get("/v1/usage/summary", headers={"X-API-Key": key.token})
-    portal = client.get(f"/portal?api_key={key.token}")
+    login_page = client.get("/portal/login")
+    portal = client.post(
+        "/portal/login",
+        data={
+            "api_key": key.token,
+            "csrf_token": login_page.cookies["__Host-cl-login-csrf"],
+        },
+    )
 
     assert response.status_code == 403
     assert response.json()["detail"] == "Account is suspended."

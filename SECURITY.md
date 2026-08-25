@@ -30,6 +30,12 @@ Include:
 - Set `COMMERCELENS_ADMIN_TOKEN` to a long random secret before exposing
   `/v1/api-keys`.
 - Store API tokens only once at creation time. CommerceLens stores token hashes.
+- Send API keys to JSON routes in the `X-API-Key` header. Never place API keys in
+  portal links, query strings, browser history, screenshots, or exports.
+- Serve `/portal` over HTTPS so its `Secure`, `HttpOnly`, and `SameSite=Strict`
+  session cookies retain their protections.
+- Keep portal absolute and inactivity timeouts bounded, and preserve CSRF checks
+  on every state changing portal request.
 - Use PostgreSQL for hosted deployments.
 - Put the API behind TLS.
 - Keep worker and API processes on private infrastructure.

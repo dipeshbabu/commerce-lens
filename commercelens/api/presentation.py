@@ -51,7 +51,19 @@ def dashboard_shell(title: str, content: str, token_query: str = "") -> str:
 </html>"""
 
 
-def portal_shell(title: str, content: str, token_query: str = "") -> str:
+def portal_shell(title: str, content: str, csrf_token: str = "") -> str:
+    session_actions = ""
+    if csrf_token:
+        escaped_token = escape_html(csrf_token)
+        session_actions = f"""
+      <form class="session-action" method="post" action="/portal/session/rotate">
+        <input type="hidden" name="csrf_token" value="{escaped_token}">
+        <button type="submit">Rotate session</button>
+      </form>
+      <form class="session-action" method="post" action="/portal/logout">
+        <input type="hidden" name="csrf_token" value="{escaped_token}">
+        <button type="submit">Log out</button>
+      </form>"""
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -62,6 +74,10 @@ def portal_shell(title: str, content: str, token_query: str = "") -> str:
     body {{ margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; color: #18212f; background: #f7f8fa; }}
     header {{ background: #0f172a; color: white; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }}
     header a {{ color: #bfdbfe; text-decoration: none; margin-left: 16px; }}
+    header nav {{ display: flex; gap: 12px; align-items: center; }}
+    .session-action {{ display: inline; margin: 0; }}
+    .session-action button {{ border: 0; background: transparent; color: #bfdbfe; padding: 0; cursor: pointer; font: inherit; }}
+    .session-action input {{ display: none; }}
     main {{ max-width: 1200px; margin: 0 auto; padding: 24px; }}
     h1 {{ font-size: 26px; margin: 0 0 18px; }}
     h2 {{ font-size: 17px; margin: 26px 0 10px; }}
@@ -83,9 +99,45 @@ def portal_shell(title: str, content: str, token_query: str = "") -> str:
 <body>
   <header>
     <div><strong>CommerceLens</strong> <span class="muted">customer portal</span></div>
-    <nav><a href="/portal{token_query}">Overview</a><a href="/docs">API Docs</a></nav>
+    <nav><a href="/portal">Overview</a><a href="/docs">API Docs</a>{session_actions}</nav>
   </header>
   <main>{content}</main>
+</body>
+</html>"""
+
+
+def portal_login(csrf_token: str, message: str = "") -> str:
+    error = f'<p class="error" role="alert">{escape_html(message)}</p>' if message else ""
+    escaped_token = escape_html(csrf_token)
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in - CommerceLens</title>
+  <style>
+    body {{ margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 20px; box-sizing: border-box; font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; color: #18212f; background: #f7f8fa; }}
+    main {{ width: min(100%, 440px); background: white; border: 1px solid #dfe4ea; border-radius: 10px; padding: 24px; box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08); }}
+    h1 {{ margin: 0 0 10px; font-size: 26px; }}
+    p {{ color: #64748b; line-height: 1.5; }}
+    form {{ display: grid; gap: 14px; margin-top: 20px; }}
+    label {{ display: grid; gap: 6px; font-weight: 600; }}
+    input {{ font: inherit; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; }}
+    button {{ font: inherit; padding: 10px 14px; border: 0; border-radius: 6px; background: #0f172a; color: white; cursor: pointer; }}
+    .error {{ color: #b91c1c; }}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Sign in to CommerceLens</h1>
+    <p>Enter the API key provided by your workspace administrator. The key is exchanged for an expiring browser session and is never placed in the URL.</p>
+    {error}
+    <form method="post" action="/portal/login">
+      <input name="csrf_token" type="hidden" value="{escaped_token}">
+      <label>API key<input name="api_key" type="password" required autocomplete="off"></label>
+      <button type="submit">Sign in</button>
+    </form>
+  </main>
 </body>
 </html>"""
 
@@ -106,5 +158,5 @@ def preformatted_json(value: object) -> str:
     return f"<pre>{escape_html(json.dumps(value, indent=2, sort_keys=True, default=str))}</pre>"
 
 
-def portal_href(path: str, token_query: str) -> str:
-    return f"{path}{token_query}"
+def portal_href(path: str) -> str:
+    return path

@@ -16,6 +16,8 @@ COMMERCELENS_STORE_BACKEND=postgres
 COMMERCELENS_DATABASE_URL=postgresql://user:password@host:5432/commercelens
 COMMERCELENS_REQUIRE_API_KEY=true
 COMMERCELENS_ADMIN_TOKEN=replace-with-long-random-secret
+COMMERCELENS_PORTAL_SESSION_TIMEOUT_SECONDS=28800
+COMMERCELENS_PORTAL_IDLE_TIMEOUT_SECONDS=1800
 COMMERCELENS_USER_AGENT="CommerceLens (+mailto:ops@yourcompany.com)"
 COMMERCELENS_DEFAULT_TIMEOUT_SECONDS=20
 ```
@@ -68,7 +70,9 @@ extractions.
 
 CommerceLens also includes a built-in `/portal` browser UI for early hosted
 customers and demos. It uses the same tenant API key scope and includes job,
-run, extraction, usage, quota, alert activity, failure triage, and JSON export views. See
+run, extraction, usage, quota, alert activity, failure triage, and JSON export
+views. Customers sign in at `/portal/login`; the key is exchanged for an
+expiring secure cookie and never appears in portal URLs. See
 `docs/customer_portal.md`.
 
 Use `/v1/issues` with a tenant API key for customer-visible failure triage. The
@@ -127,6 +131,8 @@ concurrency controls and queue-depth alerts are configured.
 ## Deployment Checklist
 
 - TLS is enabled at the load balancer or ingress.
+- The ingress preserves HTTPS and portal cookies are never downgraded.
+- Portal absolute and inactivity timeouts match the deployment risk profile.
 - `COMMERCELENS_REQUIRE_API_KEY=true`.
 - `COMMERCELENS_ADMIN_TOKEN` is set.
 - PostgreSQL has daily backups and point-in-time recovery.

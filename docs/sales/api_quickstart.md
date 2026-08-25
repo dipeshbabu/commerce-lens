@@ -47,8 +47,8 @@ curl https://api.example.com/v1/billing/usage \
 ## Open the Portal
 
 ```text
-https://api.example.com/portal?api_key=cl_REPLACE_WITH_TOKEN
+https://api.example.com/portal/login
 ```
 
-For production customers, prefer an authenticated edge or session wrapper around
-the portal rather than sharing raw API-key URLs broadly.
+Enter the account API key in the sign in form. It is exchanged for an expiring
+browser session and is not placed in portal or export URLs.

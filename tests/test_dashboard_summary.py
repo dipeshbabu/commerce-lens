@@ -126,28 +126,62 @@ def test_monitoring_overview_and_customer_portal(monkeypatch, tmp_path) -> None:
             },
         )
     )
-    client = TestClient(app)
+    client = TestClient(app, base_url="https://testserver")
 
     overview = client.get("/v1/monitoring/overview", headers={"X-API-Key": key.token})
-    portal = client.get(f"/portal?api_key={key.token}")
-    job_detail = client.get(f"/portal/jobs/{job.id}?api_key={key.token}")
-    run_detail = client.get(f"/portal/runs/{run.id}?api_key={key.token}")
-    extraction_detail = client.get(f"/portal/extractions/{extraction.id}?api_key={key.token}")
-    hidden_detail = client.get(f"/portal/jobs/{other_job.id}?api_key={key.token}")
-    export_response = client.get(f"/portal/export/jobs?api_key={key.token}")
+    login_page = client.get("/portal/login")
+    login_response = client.post(
+        "/portal/login",
+        data={
+            "api_key": key.token,
+            "csrf_token": login_page.cookies["__Host-cl-login-csrf"],
+        },
+        follow_redirects=False,
+    )
+    portal = client.get("/portal")
+    job_detail = client.get(f"/portal/jobs/{job.id}")
+    run_detail = client.get(f"/portal/runs/{run.id}")
+    extraction_detail = client.get(f"/portal/extractions/{extraction.id}")
+    hidden_detail = client.get(f"/portal/jobs/{other_job.id}")
+    export_response = client.get("/portal/export/jobs")
+    legacy_query = TestClient(app, base_url="https://testserver").get(
+        f"/portal?api_key={key.token}", follow_redirects=False
+    )
     issues_response = client.get("/v1/issues", headers={"X-API-Key": key.token})
     metrics_response = client.get("/v1/ops/failure-metrics")
 
     assert overview.status_code == 200
     assert overview.json()["target_count"] == 1
     assert overview.json()["targets"][0]["job_name"] == "competitor watch"
+    assert login_response.status_code == 303
+    assert login_response.headers["location"] == "/portal"
+    session_cookie = next(
+        value
+        for value in login_response.headers.get_list("set-cookie")
+        if value.startswith("__Host-cl-id=")
+    )
+    assert "Secure" in session_cookie
+    assert "HttpOnly" in session_cookie
+    assert "SameSite=strict" in session_cookie
+    csrf_cookie = next(
+        value
+        for value in login_response.headers.get_list("set-cookie")
+        if value.startswith("__Host-cl-csrf=")
+    )
+    assert "Secure" in csrf_cookie
+    assert "HttpOnly" in csrf_cookie
+    assert "SameSite=strict" in csrf_cookie
     assert portal.status_code == 200
+    assert "frame-ancestors 'none'" in portal.headers["content-security-policy"]
+    assert portal.headers["x-content-type-options"] == "nosniff"
     assert "customer portal" in portal.text
     assert "competitor watch" in portal.text
     assert "Recent Issues" in portal.text
     assert "timeout" in portal.text
     assert "Monitoring Jobs" in portal.text
     assert "/portal/export/jobs" in portal.text
+    assert "api_key=" not in portal.text
+    assert key.token not in portal.text
     assert job_detail.status_code == 200
     assert "Alert Rules" in job_detail.text
     assert "price drop" in job_detail.text
@@ -159,6 +193,9 @@ def test_monitoring_overview_and_customer_portal(monkeypatch, tmp_path) -> None:
     assert hidden_detail.status_code == 404
     assert export_response.status_code == 200
     assert export_response.json()["items"][0]["name"] == "competitor watch"
+    assert export_response.headers["cache-control"] == "no-store"
+    assert legacy_query.status_code == 303
+    assert legacy_query.headers["location"] == "/portal/login"
     assert issues_response.status_code == 200
     assert issues_response.json()["issues"][0]["failure_class"] == "timeout"
     assert metrics_response.status_code == 200

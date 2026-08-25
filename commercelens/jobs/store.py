@@ -25,6 +25,8 @@ from commercelens.jobs.models import (
     MonitoringJob,
     MonitoringJobCreate,
     MonitoringJobUpdate,
+    PortalSessionCreateResult,
+    PortalSessionRecord,
     ProjectCreate,
     ProjectRecord,
     RunStatus,
@@ -171,6 +173,41 @@ class JobStore:
             self._ensure_column(conn, "api_keys", "owner", "TEXT")
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_api_keys_account_project ON api_keys(account_id, project_id)"
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS portal_sessions (
+                    id TEXT PRIMARY KEY,
+                    api_key_id TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    token_hash TEXT NOT NULL UNIQUE,
+                    csrf_token_hash TEXT NOT NULL,
+                    account_id TEXT,
+                    project_id TEXT,
+                    owner TEXT,
+                    created_at TEXT NOT NULL,
+                    last_seen_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    revoked_at TEXT,
+                    FOREIGN KEY(api_key_id) REFERENCES api_keys(id)
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_portal_sessions_api_key ON portal_sessions(api_key_id)"
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_portal_sessions_active
+                ON portal_sessions(token_hash, expires_at)
+                WHERE revoked_at IS NULL
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_portal_sessions_account_project
+                ON portal_sessions(account_id, project_id)
+                """
             )
             conn.execute(
                 """
@@ -839,6 +876,160 @@ class JobStore:
         with self._connect() as conn:
             rows = conn.execute(query, params).fetchall()
         return [ApiKeyRecord.model_validate_json(row["payload"]) for row in rows]
+
+    def get_api_key(self, api_key_id: str) -> ApiKeyRecord | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload FROM api_keys WHERE id = ? AND disabled = 0", (api_key_id,)
+            ).fetchone()
+        return ApiKeyRecord.model_validate_json(row["payload"]) if row else None
+
+    def create_portal_session(
+        self,
+        key: ApiKeyRecord,
+        absolute_timeout_seconds: int = 28_800,
+    ) -> PortalSessionCreateResult:
+        if absolute_timeout_seconds < 60:
+            raise ValueError("Portal session timeout must be at least 60 seconds.")
+        token = f"ps_{secrets.token_urlsafe(32)}"
+        csrf_token = f"csrf_{secrets.token_urlsafe(32)}"
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        session = PortalSessionRecord(
+            api_key_id=key.id,
+            account_id=key.account_id,
+            project_id=key.project_id,
+            owner=key.owner,
+            token_hash=hash_token(token),
+            csrf_token_hash=hash_token(csrf_token),
+            created_at=now.isoformat(),
+            last_seen_at=now.isoformat(),
+            expires_at=(now + timedelta(seconds=absolute_timeout_seconds)).isoformat(),
+        )
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO portal_sessions (
+                    id, api_key_id, payload, token_hash, csrf_token_hash,
+                    account_id, project_id, owner, created_at, last_seen_at,
+                    expires_at, revoked_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session.id,
+                    session.api_key_id,
+                    session.model_dump_json(exclude_none=True),
+                    session.token_hash,
+                    session.csrf_token_hash,
+                    session.account_id,
+                    session.project_id,
+                    session.owner,
+                    session.created_at,
+                    session.last_seen_at,
+                    session.expires_at,
+                    session.revoked_at,
+                ),
+            )
+        return PortalSessionCreateResult(session=session, token=token, csrf_token=csrf_token)
+
+    def verify_portal_session(
+        self,
+        token: str,
+        idle_timeout_seconds: int = 1_800,
+    ) -> PortalSessionRecord | None:
+        if idle_timeout_seconds < 60:
+            raise ValueError("Portal idle timeout must be at least 60 seconds.")
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT payload FROM portal_sessions
+                WHERE token_hash = ? AND revoked_at IS NULL
+                """,
+                (hash_token(token),),
+            ).fetchone()
+        if not row:
+            return None
+        session = PortalSessionRecord.model_validate_json(row["payload"])
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        expired = datetime.fromisoformat(session.expires_at) <= now
+        idle = (
+            datetime.fromisoformat(session.last_seen_at) + timedelta(seconds=idle_timeout_seconds)
+            <= now
+        )
+        if expired or idle or not self.get_api_key(session.api_key_id):
+            self.revoke_portal_session(session.id)
+            return None
+        session.last_seen_at = now.isoformat()
+        with self._connect() as conn:
+            updated = conn.execute(
+                """
+                UPDATE portal_sessions
+                SET payload = ?, last_seen_at = ?
+                WHERE id = ? AND revoked_at IS NULL
+                """,
+                (
+                    session.model_dump_json(exclude_none=True),
+                    session.last_seen_at,
+                    session.id,
+                ),
+            )
+        return session if updated.rowcount == 1 else None
+
+    def save_portal_session(self, session: PortalSessionRecord) -> PortalSessionRecord:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE portal_sessions
+                SET payload = ?, last_seen_at = ?, expires_at = ?, revoked_at = ?
+                WHERE id = ? AND (revoked_at IS NULL OR ? IS NOT NULL)
+                """,
+                (
+                    session.model_dump_json(exclude_none=True),
+                    session.last_seen_at,
+                    session.expires_at,
+                    session.revoked_at,
+                    session.id,
+                    session.revoked_at,
+                ),
+            )
+        return session
+
+    def revoke_portal_session(self, session_id: str) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload FROM portal_sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+        if not row:
+            return False
+        session = PortalSessionRecord.model_validate_json(row["payload"])
+        if session.revoked_at is None:
+            session.revoked_at = utc_now_iso()
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    UPDATE portal_sessions
+                    SET payload = ?, revoked_at = ?
+                    WHERE id = ? AND revoked_at IS NULL
+                    """,
+                    (
+                        session.model_dump_json(exclude_none=True),
+                        session.revoked_at,
+                        session.id,
+                    ),
+                )
+        return True
+
+    def rotate_portal_session(
+        self,
+        session: PortalSessionRecord,
+        key: ApiKeyRecord,
+        absolute_timeout_seconds: int = 28_800,
+    ) -> PortalSessionCreateResult:
+        self.revoke_portal_session(session.id)
+        return self.create_portal_session(key, absolute_timeout_seconds=absolute_timeout_seconds)
+
+    @staticmethod
+    def verify_portal_csrf(session: PortalSessionRecord, csrf_token: str) -> bool:
+        return secrets.compare_digest(session.csrf_token_hash, hash_token(csrf_token))
 
     def record_usage(self, event: UsageEvent) -> UsageEvent:
         with self._connect() as conn:

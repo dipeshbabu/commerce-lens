@@ -149,6 +149,41 @@ POSTGRES_MIGRATIONS: tuple[PostgresMigration, ...] = (
             """,
         ),
     ),
+    PostgresMigration(
+        id="0002_portal_sessions",
+        description="Create tenant-scoped customer portal sessions.",
+        statements=(
+            """
+            CREATE TABLE IF NOT EXISTS portal_sessions (
+                id TEXT PRIMARY KEY,
+                api_key_id TEXT NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
+                payload JSONB NOT NULL,
+                token_hash TEXT NOT NULL UNIQUE,
+                csrf_token_hash TEXT NOT NULL,
+                account_id TEXT,
+                project_id TEXT,
+                owner TEXT,
+                created_at TIMESTAMPTZ NOT NULL,
+                last_seen_at TIMESTAMPTZ NOT NULL,
+                expires_at TIMESTAMPTZ NOT NULL,
+                revoked_at TIMESTAMPTZ
+            )
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_portal_sessions_api_key
+            ON portal_sessions(api_key_id)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_portal_sessions_active
+            ON portal_sessions(token_hash, expires_at)
+            WHERE revoked_at IS NULL
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_portal_sessions_account_project
+            ON portal_sessions(account_id, project_id)
+            """,
+        ),
+    ),
 )
 
 
