@@ -27,6 +27,7 @@ worker, and customer portal. Choose the guide that matches what you are trying t
 
 * [Hosted backend](hosted_backend.md): configure accounts, API keys, jobs, and workers
 * [Production deployment](production.md): configure and validate a hosted environment
+* [Release process](releasing.md): validate, build, tag, and publish a release
 * [Render deployment](render.md): deploy the included Render blueprint
 * [Demo workspace](demo_workspace.md): seed a realistic local customer workspace
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TypedDict
 
 from commercelens.alerts.config import MonitorConfig, MonitorTarget
 from commercelens.alerts.rules import AlertCondition, AlertRule
@@ -27,6 +28,16 @@ from commercelens.jobs.store import JobStore
 
 DEMO_ACCOUNT_ID = "acct_demo"
 DEMO_PROJECT_ID = "proj_competitor_watch"
+
+
+class DemoProduct(TypedDict):
+    url: str
+    name: str
+    brand: str
+    amount: float
+    currency: str
+    availability: str
+    confidence: float
 
 
 def seed_demo_workspace(store: JobStore) -> dict:
@@ -169,7 +180,7 @@ def seed_demo_workspace_path(path: str | Path) -> dict:
 
 
 def _record_demo_extractions(store: JobStore, key_result: ApiKeyCreateResult) -> None:
-    products = [
+    products: list[DemoProduct] = [
         {
             "url": "https://competitor.example/products/alpine-shell",
             "name": "Alpine Shell",
