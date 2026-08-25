@@ -38,7 +38,15 @@ jobs:
         run: mypy commercelens
 
       - name: Test with coverage
-        run: pytest --cov --cov-report=term-missing -q
+        run: pytest --cov --cov-report=term-missing --cov-report=xml -q
+
+      - name: Upload coverage report
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Coverage report
+          path: coverage.xml
+          if-no-files-found: error
 
   package:
     runs-on: ubuntu-latest
@@ -80,3 +88,81 @@ jobs:
           name: Python distributions
           path: dist/*
           if-no-files-found: error
+
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: commercelens
+          POSTGRES_PASSWORD: commercelens
+          POSTGRES_USER: commercelens
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U commercelens -d commercelens"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Postgres test dependencies
+        run: python -m pip install -e ".[dev,postgres]"
+
+      - name: Run Postgres migration and store tests
+        env:
+          COMMERCELENS_TEST_POSTGRES_DSN: postgresql://commercelens:commercelens@127.0.0.1:5432/commercelens
+        run: pytest tests/test_postgres_integration.py -q
+
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install browser test dependencies
+        run: |
+          python -m pip install -e ".[dev,browser]"
+          python -m playwright install --with-deps chromium
+
+      - name: Run deterministic browser fixture test
+        env:
+          COMMERCELENS_RUN_BROWSER_TESTS: "1"
+        run: pytest tests/test_browser_integration.py -q
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build --tag commercelens:ci .
+
+      - name: Smoke test readiness
+        run: |
+          container_name="commercelens-ci-${GITHUB_RUN_ID}"
+          docker run --detach --name "$container_name" --publish 127.0.0.1:8000:8000 commercelens:ci
+          trap 'docker rm --force "$container_name" >/dev/null 2>&1' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8000/ready >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs "$container_name"
+          exit 1
