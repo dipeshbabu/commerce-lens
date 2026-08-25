@@ -1,0 +1,66 @@
+name: Bug report
+description: Report a reproducible CommerceLens defect
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a defect. Do not include credentials, customer URLs, private pages, or sensitive logs.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Provide the smallest safe fixture, configuration, or code sample that reproduces the problem.
+      render: shell
+    validations:
+      required: true
+  - type: dropdown
+    id: interface
+    attributes:
+      label: Interface
+      options:
+        - Python library
+        - Command line interface
+        - REST API
+        - Worker
+        - Customer portal
+        - Deployment or packaging
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: CommerceLens version or commit
+      placeholder: 0.9.0 or commit SHA
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python and operating system
+      placeholder: Python 3.12 on Ubuntu 24.04
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional safe context
+      description: Add sanitized output, screenshots, or suspected cause when useful.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I searched existing issues for this problem.
+          required: true
+        - label: I removed credentials, customer data, and other sensitive information.
+          required: true
