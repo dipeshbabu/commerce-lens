@@ -174,5 +174,6 @@ requirements, and applicable law.
 
 ## License
 
-See [LICENSE](LICENSE). The licensing and contributor governance work is tracked in
-[issue #14](https://github.com/dipeshbabu/commerce-lens/issues/14).
+CommerceLens is open-source software licensed under the
+[Apache License 2.0](LICENSE). You may use, modify, and distribute the project under the
+terms of that license.

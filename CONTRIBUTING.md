@@ -13,16 +13,15 @@ Do not include credentials, customer URLs, captured customer pages, personal dat
 sensitive material in an issue, fixture, log, or pull request. Follow [SECURITY.md](SECURITY.md)
 for vulnerability reports.
 
-## Current license status
+## Contribution licensing
 
-The repository is public, but its current `LICENSE` and package metadata are proprietary.
-Public source visibility is not the same as an open source license. Issue
-[#14](https://github.com/dipeshbabu/commerce-lens/issues/14) tracks the maintainer decision
-needed to adopt an open source license and define permanent inbound contribution terms.
+CommerceLens is distributed under the [Apache License 2.0](LICENSE). Unless you explicitly
+state otherwise, a contribution intentionally submitted for inclusion in this project is
+provided under the same license, as described in Section 5. If material is not intended as a
+contribution, mark it clearly as `Not a Contribution`.
 
-Until that decision is complete, discuss nontrivial code contributions with the maintainer
-before investing significant work. A pull request does not change the license or grant rights
-beyond the current `LICENSE`.
+Only submit work that you have the right to contribute. Identify third-party code, data, or
+assets in the pull request and preserve all licenses and attribution notices they require.
 
 ## Development setup
 

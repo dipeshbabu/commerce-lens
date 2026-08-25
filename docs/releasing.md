@@ -9,8 +9,8 @@ readiness check.
 ## Prepare
 
 1. Start from a clean branch based on the latest `main`.
-2. Confirm the intended license and distribution rights. Do not publish a proprietary build
-   to a public package index by accident.
+2. Confirm that `LICENSE`, the README, and package metadata consistently declare
+   `Apache-2.0`, and verify the right to distribute every bundled dependency and asset.
 3. Update the version in both `pyproject.toml` and `commercelens/version.py`.
 4. Move release notes into `CHANGELOG.md` and document migrations or breaking changes.
 5. Run the complete local validation:
@@ -44,7 +44,7 @@ captured pages, customer data, or local environment files.
 1. Merge the release pull request only after every required check succeeds.
 2. Create a signed tag named `v<version>` at the verified `main` commit.
 3. Build again from the tag in a clean checkout.
-4. Publish only to the package index and deployment environment approved for that license.
+4. Publish only to package indexes and deployment environments approved by a maintainer.
 5. Create a GitHub release from the changelog and attach the verified distributions.
 6. Run API readiness and deterministic extraction smoke checks against the promoted build.
 

@@ -1,8 +1,8 @@
 # Security Policy
 
-CommerceLens has a public source repository and is currently distributed under a
-proprietary license. Treat all credentials, customer URLs, extracted product data, run logs,
-and alert payloads as confidential.
+CommerceLens is open-source software distributed under the Apache License 2.0. The license
+applies to the software, not to credentials, customer URLs, extracted product data, run logs,
+or alert payloads. Treat that operational data as confidential.
 
 ## Supported Version
 
