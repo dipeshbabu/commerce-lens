@@ -418,6 +418,7 @@ def readiness(store: JobStore = Depends(get_job_store)) -> dict[str, str | bool]
         "stripe_secret_configured": stripe_secret_configured,
         "stripe_webhook_configured": stripe_webhook_configured,
         "domain_concurrency_configured": bool(os.getenv("COMMERCELENS_DOMAIN_CONCURRENCY_LIMIT")),
+        "worker_concurrency_configured": bool(os.getenv("COMMERCELENS_WORKER_CONCURRENCY")),
         "migrations_checked": backend == "postgres",
     }
 
@@ -1341,9 +1342,9 @@ def get_run_endpoint(run_id: str, store: JobStore = Depends(get_job_store), key:
 
 
 @app.post("/v1/worker/tick", response_model=WorkerTickResult)
-def worker_tick_endpoint(limit: int = 25, dry_run: bool = False, deliver: bool = True, domain_concurrency: int | None = None, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> WorkerTickResult:
+def worker_tick_endpoint(limit: int = 25, dry_run: bool = False, deliver: bool = True, domain_concurrency: int | None = None, worker_concurrency: int | None = None, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> WorkerTickResult:
     require_scope(key, "worker:write")
-    return MonitoringWorker(store=store).tick(limit=limit, dry_run=dry_run, deliver=deliver, domain_concurrency=domain_concurrency)
+    return MonitoringWorker(store=store).tick(limit=limit, dry_run=dry_run, deliver=deliver, domain_concurrency=domain_concurrency, worker_concurrency=worker_concurrency)
 
 
 @app.post("/v1/api-keys", response_model=ApiKeyCreateResult, dependencies=[Depends(require_admin_token)])
