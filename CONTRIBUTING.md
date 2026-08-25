@@ -34,7 +34,11 @@ source .venv/bin/activate
 python -m pip install -e ".[dev]"
 ruff check .
 ruff format --check .
-pytest -q
+mypy commercelens
+pytest --cov --cov-report=term-missing -q
+python -m build
+twine check dist/*
+pip-audit . --strict --progress-spinner off --cache-dir /tmp/pip-audit-cache
 ```
 
 The default test suite must be deterministic and must not require live commerce sites,

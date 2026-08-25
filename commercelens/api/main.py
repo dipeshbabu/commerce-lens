@@ -1251,6 +1251,7 @@ def customer_portal_job(
         ]
         for run in runs
     ]
+    failure_class = classify_failure(job.last_error) if job.last_error else None
     rows = [
         ["Name", _esc(job.name)],
         ["Status", _esc(job.status.value)],
@@ -1264,11 +1265,9 @@ def customer_portal_job(
         ],
         [
             "Last failure class",
-            _esc(
-                classify_failure(job.last_error).value if classify_failure(job.last_error) else None
-            ),
+            _esc(failure_class.value if failure_class else None),
         ],
-        ["Recommendation", _esc(recommendation_for_failure(classify_failure(job.last_error)))],
+        ["Recommendation", _esc(recommendation_for_failure(failure_class))],
         ["Tags", _esc(", ".join(job.tags))],
         ["Retries", _esc(job.max_retries)],
         ["Retry backoff seconds", _esc(job.retry_backoff_seconds)],

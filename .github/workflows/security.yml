@@ -1,0 +1,32 @@
+name: Dependency security
+
+on:
+  pull_request:
+    paths:
+      - pyproject.toml
+      - requirements.txt
+      - .github/workflows/security.yml
+  schedule:
+    - cron: "17 8 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install auditor
+        run: python -m pip install --upgrade pip-audit
+
+      - name: Audit project dependencies
+        run: pip-audit . --strict --progress-spinner off --cache-dir /tmp/pip-audit-cache

@@ -31,9 +31,9 @@ def summarize_prices(records: list[ProductRecord]) -> PriceIntelligenceSummary:
             "Multiple currencies found; aggregate price fields are not currency-normalized."
         )
 
-    amounts = [float(record.amount) for record in priced if record.amount is not None]
-    cheapest = min(priced, key=lambda record: float(record.amount)) if priced else None
-    highest = max(priced, key=lambda record: float(record.amount)) if priced else None
+    amounts = [_record_amount(record) for record in priced]
+    cheapest = min(priced, key=_record_amount) if priced else None
+    highest = max(priced, key=_record_amount) if priced else None
     return PriceIntelligenceSummary(
         record_count=len(records),
         priced_count=len(priced),
@@ -46,3 +46,9 @@ def summarize_prices(records: list[ProductRecord]) -> PriceIntelligenceSummary:
         availability_counts=dict(sorted(availability_counts.items())),
         warnings=warnings,
     )
+
+
+def _record_amount(record: ProductRecord) -> float:
+    if record.amount is None:
+        raise ValueError("A priced product record must include an amount.")
+    return float(record.amount)
