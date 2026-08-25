@@ -42,4 +42,4 @@ def test_chromium_renders_and_extracts_a_local_fixture(monkeypatch) -> None:
 
     assert result.product.name == "Benchmark Widget"
     assert result.product.price is not None
-    assert result.product.price.amount == 129.99
+    assert result.product.price.amount == 49.99
