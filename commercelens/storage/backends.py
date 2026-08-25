@@ -89,7 +89,9 @@ class PostgresSnapshotBackend(ProductSnapshotBackend):
             import psycopg  # type: ignore
             from psycopg.rows import dict_row  # type: ignore
         except ImportError as exc:  # pragma: no cover - optional dependency path
-            raise RuntimeError("Postgres backend requires psycopg. Install with `pip install -e .[postgres]`.") from exc
+            raise RuntimeError(
+                "Postgres backend requires psycopg. Install with `pip install -e .[postgres]`."
+            ) from exc
         self._psycopg = psycopg
         self._dict_row = dict_row
         self._ensure_schema()

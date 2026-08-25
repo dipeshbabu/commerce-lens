@@ -191,7 +191,9 @@ def extract_product_from_html(html: str, url: str | None = None) -> ProductExtra
         aggregate_rating = jsonld_product.get("aggregateRating")
         if isinstance(aggregate_rating, dict):
             rating = aggregate_rating.get("ratingValue")
-            review_count = aggregate_rating.get("reviewCount") or aggregate_rating.get("ratingCount")
+            review_count = aggregate_rating.get("reviewCount") or aggregate_rating.get(
+                "ratingCount"
+            )
             try:
                 product.rating = float(rating) if rating is not None else None
             except (TypeError, ValueError):

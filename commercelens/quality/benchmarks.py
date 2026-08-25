@@ -74,9 +74,13 @@ def _value_at_path(payload: Any, path: str) -> Any:
 def _run_case(html_path: Path, expectation: BenchmarkExpectation) -> BenchmarkCaseResult:
     html = html_path.read_text(encoding="utf-8")
     if expectation.kind == "product":
-        extracted = extract_product_from_html(html, url=expectation.source_url).model_dump(mode="json")
+        extracted = extract_product_from_html(html, url=expectation.source_url).model_dump(
+            mode="json"
+        )
     else:
-        extracted = extract_listing_from_html(html, url=expectation.source_url).model_dump(mode="json")
+        extracted = extract_listing_from_html(html, url=expectation.source_url).model_dump(
+            mode="json"
+        )
 
     failures: dict[str, dict[str, Any]] = {}
     passed_fields = 0
@@ -169,14 +173,22 @@ def build_quality_report(fixture_dir: str | Path) -> BenchmarkQualityReport:
     ]
     recommendations: list[str] = []
     if suite.score < 0.95:
-        recommendations.append("Add fixtures for the lowest-scoring domains before expanding coverage.")
+        recommendations.append(
+            "Add fixtures for the lowest-scoring domains before expanding coverage."
+        )
     if failing_fields:
         worst_field = max(failing_fields.items(), key=lambda item: item[1])[0]
-        recommendations.append(f"Prioritize extractor work on `{worst_field}`; it has the most failures.")
+        recommendations.append(
+            f"Prioritize extractor work on `{worst_field}`; it has the most failures."
+        )
     if suite.total_cases < 25:
-        recommendations.append("Expand the benchmark suite to at least 25 fixtures before using it as a release gate.")
+        recommendations.append(
+            "Expand the benchmark suite to at least 25 fixtures before using it as a release gate."
+        )
     if not recommendations:
-        recommendations.append("Use this report as a release gate and add fixtures for every customer escalation.")
+        recommendations.append(
+            "Use this report as a release gate and add fixtures for every customer escalation."
+        )
 
     passed_fields = sum(case.passed_fields for case in suite.cases)
     total_fields = sum(case.total_fields for case in suite.cases)

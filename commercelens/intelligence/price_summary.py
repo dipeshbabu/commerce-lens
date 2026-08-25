@@ -27,7 +27,9 @@ def summarize_prices(records: list[ProductRecord]) -> PriceIntelligenceSummary:
     currencies = sorted({record.currency.upper() for record in priced if record.currency})
     currency = currencies[0] if len(currencies) == 1 else None
     if len(currencies) > 1:
-        warnings.append("Multiple currencies found; aggregate price fields are not currency-normalized.")
+        warnings.append(
+            "Multiple currencies found; aggregate price fields are not currency-normalized."
+        )
 
     amounts = [float(record.amount) for record in priced if record.amount is not None]
     cheapest = min(priced, key=lambda record: float(record.amount)) if priced else None

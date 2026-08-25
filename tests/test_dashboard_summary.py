@@ -121,7 +121,9 @@ def test_monitoring_overview_and_customer_portal(monkeypatch, tmp_path) -> None:
             url="https://example.com/product",
             account_id="acct_demo",
             project_id="proj_demo",
-            payload={"product": {"name": "Example Product", "price": {"amount": 10, "currency": "USD"}}},
+            payload={
+                "product": {"name": "Example Product", "price": {"amount": 10, "currency": "USD"}}
+            },
         )
     )
     client = TestClient(app)

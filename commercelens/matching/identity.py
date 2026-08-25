@@ -77,15 +77,14 @@ def build_identity_graph(
     for index in range(len(records)):
         groups[union_find.find(index)].append(index)
 
-    clusters = [
-        _cluster_from_indexes(indexes, records)
-        for indexes in groups.values()
-    ]
+    clusters = [_cluster_from_indexes(indexes, records) for indexes in groups.values()]
     clusters.sort(key=lambda cluster: (-len(cluster.records), cluster.id))
     return ProductIdentityGraph(clusters=clusters, edges=edges)
 
 
-def _cluster_from_indexes(indexes: list[int], records: list[ProductRecord]) -> ProductIdentityCluster:
+def _cluster_from_indexes(
+    indexes: list[int], records: list[ProductRecord]
+) -> ProductIdentityCluster:
     cluster_records = [records[index] for index in indexes]
     domains = sorted({_domain(record.url) for record in cluster_records if _domain(record.url)})
     amounts = [record.amount for record in cluster_records if record.amount is not None]

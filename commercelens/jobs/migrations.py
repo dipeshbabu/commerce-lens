@@ -197,7 +197,9 @@ def migrate_postgres_dsn(dsn: str) -> list[str]:
         import psycopg  # type: ignore[import-not-found]
         from psycopg.rows import dict_row  # type: ignore[import-not-found]
     except ImportError as exc:  # pragma: no cover - optional dependency path
-        raise RuntimeError("Postgres migrations require `pip install commercelens[postgres]`.") from exc
+        raise RuntimeError(
+            "Postgres migrations require `pip install commercelens[postgres]`."
+        ) from exc
 
     with psycopg.connect(dsn, row_factory=dict_row) as conn:
         return run_postgres_migrations(conn)

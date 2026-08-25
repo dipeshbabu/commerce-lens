@@ -265,7 +265,16 @@ class ApiKeyCreate(BaseModel):
     owner: str | None = None
     account_id: str | None = None
     project_id: str | None = None
-    scopes: list[str] = Field(default_factory=lambda: ["extract:write", "extractions:read", "jobs:read", "jobs:write", "runs:read", "usage:read"])
+    scopes: list[str] = Field(
+        default_factory=lambda: [
+            "extract:write",
+            "extractions:read",
+            "jobs:read",
+            "jobs:write",
+            "runs:read",
+            "usage:read",
+        ]
+    )
     billing_plan: BillingPlan = BillingPlan.free
     monthly_quota_overrides: dict[UsageMetric, int] = Field(default_factory=dict)
     monthly_domain_quotas: dict[str, int] = Field(default_factory=dict)
@@ -358,4 +367,6 @@ class WebhookTarget(BaseModel):
     name: str
     url: HttpUrl
     enabled: bool = True
-    event_types: list[str] = Field(default_factory=lambda: ["job.run.succeeded", "job.run.failed", "alert.created"])
+    event_types: list[str] = Field(
+        default_factory=lambda: ["job.run.succeeded", "job.run.failed", "alert.created"]
+    )

@@ -51,7 +51,9 @@ def product_key_for(url: str | None, name: str | None, brand: str | None = None)
     return hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24]
 
 
-def snapshot_from_result(result: ProductExtractionResult, captured_at: str | None = None) -> ProductSnapshot:
+def snapshot_from_result(
+    result: ProductExtractionResult, captured_at: str | None = None
+) -> ProductSnapshot:
     product = result.product
     price = product.price
     canonical_or_source = product.canonical_url or product.source_url or result.url
@@ -74,7 +76,9 @@ def snapshot_from_result(result: ProductExtractionResult, captured_at: str | Non
 class PriceSnapshotStore:
     def __init__(self, path: str | Path = "commercelens.db") -> None:
         self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True) if self.path.parent != Path(".") else None
+        self.path.parent.mkdir(parents=True, exist_ok=True) if self.path.parent != Path(
+            "."
+        ) else None
         self._init_db()
 
     def _connect(self) -> sqlite3.Connection:
@@ -107,8 +111,7 @@ class PriceSnapshotStore:
                 "ON price_snapshots(product_key, captured_at)"
             )
             connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_price_snapshots_url "
-                "ON price_snapshots(source_url)"
+                "CREATE INDEX IF NOT EXISTS idx_price_snapshots_url ON price_snapshots(source_url)"
             )
 
     def add_snapshot(self, snapshot: ProductSnapshot) -> int:

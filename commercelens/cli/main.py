@@ -12,7 +12,11 @@ from commercelens.alerts.config import load_monitor_config, save_example_config
 from commercelens.alerts.runner import run_monitor_config_file
 from commercelens.api.auth import get_job_store
 from commercelens.api.quota import quota_decision
-from commercelens.connectors.datasets import load_product_records, records_from_snapshots, write_product_records
+from commercelens.connectors.datasets import (
+    load_product_records,
+    records_from_snapshots,
+    write_product_records,
+)
 from commercelens.core.crawler import crawl_catalog
 from commercelens.core.monitor import monitor_product, monitor_products
 from commercelens.demo import seed_demo_workspace_path
@@ -20,7 +24,22 @@ from commercelens.extractors.listing import extract_listing, extract_listing_fro
 from commercelens.extractors.product import extract_product, extract_product_from_html
 from commercelens.jobs.billing import MONTHLY_PLAN_LIMITS
 from commercelens.jobs.migrations import migrate_postgres_dsn
-from commercelens.jobs.models import AccountCreate, AccountStatus, ApiKeyCreate, BillingPlan, BillingUsageItem, BillingUsageSnapshot, JobStatus, MemberCreate, MemberRole, MonitoringJobCreate, MonitoringJobUpdate, ProjectCreate, ScheduleKind, UsageMetric
+from commercelens.jobs.models import (
+    AccountCreate,
+    AccountStatus,
+    ApiKeyCreate,
+    BillingPlan,
+    BillingUsageItem,
+    BillingUsageSnapshot,
+    JobStatus,
+    MemberCreate,
+    MemberRole,
+    MonitoringJobCreate,
+    MonitoringJobUpdate,
+    ProjectCreate,
+    ScheduleKind,
+    UsageMetric,
+)
 from commercelens.jobs.store import JobStore
 from commercelens.jobs.worker import MonitoringWorker, run_job_now
 from commercelens.intelligence.price_summary import summarize_prices
@@ -32,9 +51,7 @@ from commercelens.quality.benchmarks import build_quality_report, run_benchmark_
 from commercelens.storage.exporters import write_csv, write_jsonl
 from commercelens.storage.price_store import PriceSnapshotStore
 
-app = typer.Typer(
-    help="CommerceLens: competitor price, availability, and catalog monitoring."
-)
+app = typer.Typer(help="CommerceLens: competitor price, availability, and catalog monitoring.")
 console = Console()
 
 OutputFormat = Literal["json", "jsonl", "csv"]
@@ -56,23 +73,44 @@ def _job_store(path: Path | None = None) -> Any:
 
 
 @app.command()
-def product(url: str = typer.Argument(...), out: Path | None = typer.Option(None, "--out", "-o"), render: bool = typer.Option(False, "--render"), screenshot: Path | None = typer.Option(None, "--screenshot"), html_snapshot: Path | None = typer.Option(None, "--html-snapshot")) -> None:
+def product(
+    url: str = typer.Argument(...),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+    render: bool = typer.Option(False, "--render"),
+    screenshot: Path | None = typer.Option(None, "--screenshot"),
+    html_snapshot: Path | None = typer.Option(None, "--html-snapshot"),
+) -> None:
     """Extract a normalized product object from a product page URL."""
-    result = extract_product(url, render=render, screenshot_path=screenshot, html_snapshot_path=html_snapshot)
+    result = extract_product(
+        url, render=render, screenshot_path=screenshot, html_snapshot_path=html_snapshot
+    )
     _write_or_print(result.model_dump(mode="json", exclude_none=True), out=out)
 
 
 @app.command()
-def html(path: Path = typer.Argument(...), url: str | None = typer.Option(None, "--url"), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+def html(
+    path: Path = typer.Argument(...),
+    url: str | None = typer.Option(None, "--url"),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+) -> None:
     """Extract a normalized product object from a local HTML file."""
     result = extract_product_from_html(path.read_text(encoding="utf-8"), url=url)
     _write_or_print(result.model_dump(mode="json", exclude_none=True), out=out)
 
 
 @app.command()
-def listing(url: str = typer.Argument(...), out: Path | None = typer.Option(None, "--out", "-o"), fmt: OutputFormat = typer.Option("json", "--format", "-f"), render: bool = typer.Option(False, "--render"), screenshot: Path | None = typer.Option(None, "--screenshot"), html_snapshot: Path | None = typer.Option(None, "--html-snapshot")) -> None:
+def listing(
+    url: str = typer.Argument(...),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+    fmt: OutputFormat = typer.Option("json", "--format", "-f"),
+    render: bool = typer.Option(False, "--render"),
+    screenshot: Path | None = typer.Option(None, "--screenshot"),
+    html_snapshot: Path | None = typer.Option(None, "--html-snapshot"),
+) -> None:
     """Extract product cards from a listing or category page."""
-    result = extract_listing(url, render=render, screenshot_path=screenshot, html_snapshot_path=html_snapshot)
+    result = extract_listing(
+        url, render=render, screenshot_path=screenshot, html_snapshot_path=html_snapshot
+    )
     if out and fmt == "jsonl":
         write_jsonl(result.products, out)
         console.print(f"[green]Wrote {len(result.products)} products to {out}[/green]")
@@ -85,7 +123,12 @@ def listing(url: str = typer.Argument(...), out: Path | None = typer.Option(None
 
 
 @app.command()
-def listing_html(path: Path = typer.Argument(...), url: str | None = typer.Option(None, "--url"), out: Path | None = typer.Option(None, "--out", "-o"), fmt: OutputFormat = typer.Option("json", "--format", "-f")) -> None:
+def listing_html(
+    path: Path = typer.Argument(...),
+    url: str | None = typer.Option(None, "--url"),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+    fmt: OutputFormat = typer.Option("json", "--format", "-f"),
+) -> None:
     """Extract product cards from a local listing/category HTML file."""
     result = extract_listing_from_html(path.read_text(encoding="utf-8"), url=url)
     if out and fmt == "jsonl":
@@ -100,7 +143,14 @@ def listing_html(path: Path = typer.Argument(...), url: str | None = typer.Optio
 
 
 @app.command()
-def crawl(url: str = typer.Argument(...), max_pages: int = typer.Option(5, "--max-pages", min=1, max=100), out: Path | None = typer.Option(None, "--out", "-o"), fmt: OutputFormat = typer.Option("json", "--format", "-f"), render: bool = typer.Option(False, "--render"), debug_dir: Path | None = typer.Option(None, "--debug-dir")) -> None:
+def crawl(
+    url: str = typer.Argument(...),
+    max_pages: int = typer.Option(5, "--max-pages", min=1, max=100),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+    fmt: OutputFormat = typer.Option("json", "--format", "-f"),
+    render: bool = typer.Option(False, "--render"),
+    debug_dir: Path | None = typer.Option(None, "--debug-dir"),
+) -> None:
     """Crawl listing pages by following next-page links and collect product cards."""
     result = crawl_catalog(url, max_pages=max_pages, render=render, debug_dir=debug_dir)
     if out and fmt == "jsonl":
@@ -115,22 +165,43 @@ def crawl(url: str = typer.Argument(...), max_pages: int = typer.Option(5, "--ma
 
 
 @app.command()
-def monitor(url: str = typer.Argument(...), db: Path = typer.Option(Path("commercelens.db"), "--db"), render: bool = typer.Option(False, "--render"), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+def monitor(
+    url: str = typer.Argument(...),
+    db: Path = typer.Option(Path("commercelens.db"), "--db"),
+    render: bool = typer.Option(False, "--render"),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+) -> None:
     """Extract a product, save a price snapshot, and report changes."""
     result = monitor_product(url, db_path=db, render=render)
     _write_or_print(result.model_dump(mode="json", exclude_none=True), out=out)
 
 
 @app.command()
-def monitor_batch(urls_file: Path = typer.Argument(...), db: Path = typer.Option(Path("commercelens.db"), "--db"), render: bool = typer.Option(False, "--render"), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+def monitor_batch(
+    urls_file: Path = typer.Argument(...),
+    db: Path = typer.Option(Path("commercelens.db"), "--db"),
+    render: bool = typer.Option(False, "--render"),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+) -> None:
     """Monitor many product URLs from a text file."""
-    urls = [line.strip() for line in urls_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+    urls = [
+        line.strip() for line in urls_file.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
     result = monitor_products(urls, db_path=db, render=render)
     _write_or_print(result.model_dump(mode="json", exclude_none=True), out=out)
 
 
 @app.command()
-def run(config: Path = typer.Argument(..., help="Monitor config JSON/YAML file."), dry_run: bool = typer.Option(False, "--dry-run", help="Evaluate and build alert payloads without delivering."), no_deliver: bool = typer.Option(False, "--no-deliver", help="Run monitoring without alert delivery."), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+def run(
+    config: Path = typer.Argument(..., help="Monitor config JSON/YAML file."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Evaluate and build alert payloads without delivering."
+    ),
+    no_deliver: bool = typer.Option(
+        False, "--no-deliver", help="Run monitoring without alert delivery."
+    ),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+) -> None:
     """Run a monitor config once and optionally deliver alerts."""
     result = run_monitor_config_file(str(config), dry_run=dry_run, deliver=not no_deliver)
     _write_or_print(result.model_dump(mode="json", exclude_none=True), out=out)
@@ -144,68 +215,182 @@ def init_config(path: Path = typer.Argument(Path("commercelens.monitor.json"))) 
 
 
 @app.command("create-job")
-def create_job(config: Path = typer.Argument(...), name: str = typer.Option(..., "--name"), jobs_db: Path | None = typer.Option(None, "--jobs-db", help="SQLite jobs DB path. Omit to use COMMERCELENS_STORE_BACKEND."), interval_minutes: int = typer.Option(360, "--interval-minutes", min=1), manual: bool = typer.Option(False, "--manual"), account_id: str | None = typer.Option(None, "--account-id"), project_id: str | None = typer.Option(None, "--project-id"), owner: str | None = typer.Option(None, "--owner"), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+def create_job(
+    config: Path = typer.Argument(...),
+    name: str = typer.Option(..., "--name"),
+    jobs_db: Path | None = typer.Option(
+        None, "--jobs-db", help="SQLite jobs DB path. Omit to use COMMERCELENS_STORE_BACKEND."
+    ),
+    interval_minutes: int = typer.Option(360, "--interval-minutes", min=1),
+    manual: bool = typer.Option(False, "--manual"),
+    account_id: str | None = typer.Option(None, "--account-id"),
+    project_id: str | None = typer.Option(None, "--project-id"),
+    owner: str | None = typer.Option(None, "--owner"),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+) -> None:
     """Create a persistent hosted monitoring job from a monitor config file."""
     monitor_config = load_monitor_config(config)
-    request = MonitoringJobCreate(name=name, config=monitor_config, schedule_kind=ScheduleKind.manual if manual else ScheduleKind.interval, interval_minutes=interval_minutes, account_id=account_id, project_id=project_id, owner=owner)
+    request = MonitoringJobCreate(
+        name=name,
+        config=monitor_config,
+        schedule_kind=ScheduleKind.manual if manual else ScheduleKind.interval,
+        interval_minutes=interval_minutes,
+        account_id=account_id,
+        project_id=project_id,
+        owner=owner,
+    )
     job = _job_store(jobs_db).create_job(request)
     _write_or_print(job.model_dump(mode="json", exclude_none=True), out=out)
 
 
 @app.command("list-jobs")
-def list_jobs(jobs_db: Path | None = typer.Option(None, "--jobs-db", help="SQLite jobs DB path. Omit to use COMMERCELENS_STORE_BACKEND."), status: JobStatus | None = typer.Option(None, "--status"), account_id: str | None = typer.Option(None, "--account-id"), project_id: str | None = typer.Option(None, "--project-id"), limit: int = typer.Option(100, "--limit", min=1, max=1000), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+def list_jobs(
+    jobs_db: Path | None = typer.Option(
+        None, "--jobs-db", help="SQLite jobs DB path. Omit to use COMMERCELENS_STORE_BACKEND."
+    ),
+    status: JobStatus | None = typer.Option(None, "--status"),
+    account_id: str | None = typer.Option(None, "--account-id"),
+    project_id: str | None = typer.Option(None, "--project-id"),
+    limit: int = typer.Option(100, "--limit", min=1, max=1000),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+) -> None:
     """List persistent monitoring jobs."""
-    jobs = _job_store(jobs_db).list_jobs(status=status, limit=limit, account_id=account_id, project_id=project_id)
+    jobs = _job_store(jobs_db).list_jobs(
+        status=status, limit=limit, account_id=account_id, project_id=project_id
+    )
     _write_or_print([job.model_dump(mode="json", exclude_none=True) for job in jobs], out=out)
 
 
 @app.command("pause-job")
-def pause_job(job_id: str = typer.Argument(...), jobs_db: Path | None = typer.Option(None, "--jobs-db"), account_id: str | None = typer.Option(None, "--account-id"), project_id: str | None = typer.Option(None, "--project-id")) -> None:
+def pause_job(
+    job_id: str = typer.Argument(...),
+    jobs_db: Path | None = typer.Option(None, "--jobs-db"),
+    account_id: str | None = typer.Option(None, "--account-id"),
+    project_id: str | None = typer.Option(None, "--project-id"),
+) -> None:
     """Pause a monitoring job."""
-    job = _job_store(jobs_db).update_job(job_id, MonitoringJobUpdate(status=JobStatus.paused), account_id=account_id, project_id=project_id)
+    job = _job_store(jobs_db).update_job(
+        job_id,
+        MonitoringJobUpdate(status=JobStatus.paused),
+        account_id=account_id,
+        project_id=project_id,
+    )
     if not job:
         raise typer.BadParameter(f"Job not found: {job_id}")
     console.print(f"[green]Paused {job.id}[/green]")
 
 
 @app.command("resume-job")
-def resume_job(job_id: str = typer.Argument(...), jobs_db: Path | None = typer.Option(None, "--jobs-db"), account_id: str | None = typer.Option(None, "--account-id"), project_id: str | None = typer.Option(None, "--project-id")) -> None:
+def resume_job(
+    job_id: str = typer.Argument(...),
+    jobs_db: Path | None = typer.Option(None, "--jobs-db"),
+    account_id: str | None = typer.Option(None, "--account-id"),
+    project_id: str | None = typer.Option(None, "--project-id"),
+) -> None:
     """Resume a monitoring job."""
-    job = _job_store(jobs_db).update_job(job_id, MonitoringJobUpdate(status=JobStatus.active), account_id=account_id, project_id=project_id)
+    job = _job_store(jobs_db).update_job(
+        job_id,
+        MonitoringJobUpdate(status=JobStatus.active),
+        account_id=account_id,
+        project_id=project_id,
+    )
     if not job:
         raise typer.BadParameter(f"Job not found: {job_id}")
     console.print(f"[green]Resumed {job.id}[/green]")
 
 
 @app.command("run-job")
-def run_job(job_id: str = typer.Argument(...), jobs_db: Path | None = typer.Option(None, "--jobs-db"), dry_run: bool = typer.Option(False, "--dry-run"), no_deliver: bool = typer.Option(False, "--no-deliver"), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+def run_job(
+    job_id: str = typer.Argument(...),
+    jobs_db: Path | None = typer.Option(None, "--jobs-db"),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    no_deliver: bool = typer.Option(False, "--no-deliver"),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+) -> None:
     """Run a persistent monitoring job immediately."""
     result = run_job_now(_job_store(jobs_db), job_id, dry_run=dry_run, deliver=not no_deliver)
     _write_or_print(result.model_dump(mode="json", exclude_none=True), out=out)
 
 
 @app.command("worker-tick")
-def worker_tick(jobs_db: Path | None = typer.Option(None, "--jobs-db"), limit: int = typer.Option(25, "--limit", min=1, max=100), dry_run: bool = typer.Option(False, "--dry-run"), no_deliver: bool = typer.Option(False, "--no-deliver"), domain_concurrency: int | None = typer.Option(None, "--domain-concurrency", min=1), worker_concurrency: int | None = typer.Option(None, "--worker-concurrency", min=1), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+def worker_tick(
+    jobs_db: Path | None = typer.Option(None, "--jobs-db"),
+    limit: int = typer.Option(25, "--limit", min=1, max=100),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    no_deliver: bool = typer.Option(False, "--no-deliver"),
+    domain_concurrency: int | None = typer.Option(None, "--domain-concurrency", min=1),
+    worker_concurrency: int | None = typer.Option(None, "--worker-concurrency", min=1),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+) -> None:
     """Execute due monitoring jobs once."""
-    result = MonitoringWorker(store=_job_store(jobs_db)).tick(limit=limit, dry_run=dry_run, deliver=not no_deliver, domain_concurrency=domain_concurrency, worker_concurrency=worker_concurrency)
+    result = MonitoringWorker(store=_job_store(jobs_db)).tick(
+        limit=limit,
+        dry_run=dry_run,
+        deliver=not no_deliver,
+        domain_concurrency=domain_concurrency,
+        worker_concurrency=worker_concurrency,
+    )
     _write_or_print(result.model_dump(mode="json", exclude_none=True), out=out)
 
 
 @app.command("worker")
-def worker(jobs_db: Path | None = typer.Option(None, "--jobs-db"), poll_seconds: int = typer.Option(60, "--poll-seconds", min=1), limit: int = typer.Option(25, "--limit", min=1, max=100), dry_run: bool = typer.Option(False, "--dry-run"), no_deliver: bool = typer.Option(False, "--no-deliver"), domain_concurrency: int | None = typer.Option(None, "--domain-concurrency", min=1), worker_concurrency: int | None = typer.Option(None, "--worker-concurrency", min=1)) -> None:
+def worker(
+    jobs_db: Path | None = typer.Option(None, "--jobs-db"),
+    poll_seconds: int = typer.Option(60, "--poll-seconds", min=1),
+    limit: int = typer.Option(25, "--limit", min=1, max=100),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    no_deliver: bool = typer.Option(False, "--no-deliver"),
+    domain_concurrency: int | None = typer.Option(None, "--domain-concurrency", min=1),
+    worker_concurrency: int | None = typer.Option(None, "--worker-concurrency", min=1),
+) -> None:
     """Run the monitoring worker loop."""
-    MonitoringWorker(store=_job_store(jobs_db)).run_forever(poll_seconds=poll_seconds, limit=limit, dry_run=dry_run, deliver=not no_deliver, domain_concurrency=domain_concurrency, worker_concurrency=worker_concurrency)
+    MonitoringWorker(store=_job_store(jobs_db)).run_forever(
+        poll_seconds=poll_seconds,
+        limit=limit,
+        dry_run=dry_run,
+        deliver=not no_deliver,
+        domain_concurrency=domain_concurrency,
+        worker_concurrency=worker_concurrency,
+    )
 
 
 @app.command("list-runs")
-def list_runs(jobs_db: Path | None = typer.Option(None, "--jobs-db"), job_id: str | None = typer.Option(None, "--job-id"), account_id: str | None = typer.Option(None, "--account-id"), project_id: str | None = typer.Option(None, "--project-id"), limit: int = typer.Option(100, "--limit", min=1, max=1000), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+def list_runs(
+    jobs_db: Path | None = typer.Option(None, "--jobs-db"),
+    job_id: str | None = typer.Option(None, "--job-id"),
+    account_id: str | None = typer.Option(None, "--account-id"),
+    project_id: str | None = typer.Option(None, "--project-id"),
+    limit: int = typer.Option(100, "--limit", min=1, max=1000),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+) -> None:
     """List monitoring job runs."""
-    runs = _job_store(jobs_db).list_runs(job_id=job_id, limit=limit, account_id=account_id, project_id=project_id)
+    runs = _job_store(jobs_db).list_runs(
+        job_id=job_id, limit=limit, account_id=account_id, project_id=project_id
+    )
     _write_or_print([run.model_dump(mode="json", exclude_none=True) for run in runs], out=out)
 
 
 @app.command("create-api-key")
-def create_api_key(name: str = typer.Option(..., "--name"), jobs_db: Path | None = typer.Option(None, "--jobs-db"), owner: str | None = typer.Option(None, "--owner"), account_id: str | None = typer.Option(None, "--account-id"), project_id: str | None = typer.Option(None, "--project-id"), billing_plan: BillingPlan = typer.Option(BillingPlan.free, "--billing-plan"), scopes: list[str] | None = typer.Option(None, "--scope"), quota: list[str] | None = typer.Option(None, "--quota", help="Override monthly quota as metric=limit. Example: --quota product_extract=10000"), domain_quota: list[str] | None = typer.Option(None, "--domain-quota", help="Set monthly domain quota as domain=limit. Use *=limit as a default."), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+def create_api_key(
+    name: str = typer.Option(..., "--name"),
+    jobs_db: Path | None = typer.Option(None, "--jobs-db"),
+    owner: str | None = typer.Option(None, "--owner"),
+    account_id: str | None = typer.Option(None, "--account-id"),
+    project_id: str | None = typer.Option(None, "--project-id"),
+    billing_plan: BillingPlan = typer.Option(BillingPlan.free, "--billing-plan"),
+    scopes: list[str] | None = typer.Option(None, "--scope"),
+    quota: list[str] | None = typer.Option(
+        None,
+        "--quota",
+        help="Override monthly quota as metric=limit. Example: --quota product_extract=10000",
+    ),
+    domain_quota: list[str] | None = typer.Option(
+        None,
+        "--domain-quota",
+        help="Set monthly domain quota as domain=limit. Use *=limit as a default.",
+    ),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+) -> None:
     """Create an API key for hosted deployments."""
     overrides: dict[UsageMetric, int] = {}
     for item in quota or []:
@@ -219,7 +404,18 @@ def create_api_key(name: str = typer.Option(..., "--name"), jobs_db: Path | None
             raise typer.BadParameter("Domain quota overrides must use domain=limit format.")
         domain, raw_limit = item.split("=", 1)
         domain_overrides[domain.lower()] = int(raw_limit)
-    result = _job_store(jobs_db).create_api_key(ApiKeyCreate(name=name, owner=owner, account_id=account_id, project_id=project_id, scopes=scopes or ["*"], billing_plan=billing_plan, monthly_quota_overrides=overrides, monthly_domain_quotas=domain_overrides))
+    result = _job_store(jobs_db).create_api_key(
+        ApiKeyCreate(
+            name=name,
+            owner=owner,
+            account_id=account_id,
+            project_id=project_id,
+            scopes=scopes or ["*"],
+            billing_plan=billing_plan,
+            monthly_quota_overrides=overrides,
+            monthly_domain_quotas=domain_overrides,
+        )
+    )
     _write_or_print(result.model_dump(mode="json", exclude_none=True), out=out)
 
 
@@ -246,10 +442,26 @@ def onboard_customer(
         domain, raw_limit = item.split("=", 1)
         domain_overrides[domain.lower()] = int(raw_limit)
     store = _job_store(jobs_db)
-    account = store.create_account(AccountCreate(name=account_name, owner=owner_email, billing_plan=billing_plan, status=account_status))
+    account = store.create_account(
+        AccountCreate(
+            name=account_name, owner=owner_email, billing_plan=billing_plan, status=account_status
+        )
+    )
     project = store.create_project(account.id, ProjectCreate(name=project_name, slug=project_slug))
-    member = store.create_member(account.id, MemberCreate(email=owner_email, role=MemberRole.owner, name=member_name))
-    key_result = store.create_api_key(ApiKeyCreate(name=api_key_name, owner=owner_email, account_id=account.id, project_id=project.id, scopes=scopes or ["*"], billing_plan=billing_plan, monthly_domain_quotas=domain_overrides))
+    member = store.create_member(
+        account.id, MemberCreate(email=owner_email, role=MemberRole.owner, name=member_name)
+    )
+    key_result = store.create_api_key(
+        ApiKeyCreate(
+            name=api_key_name,
+            owner=owner_email,
+            account_id=account.id,
+            project_id=project.id,
+            scopes=scopes or ["*"],
+            billing_plan=billing_plan,
+            monthly_domain_quotas=domain_overrides,
+        )
+    )
     payload = {
         "account": account.model_dump(mode="json", exclude_none=True),
         "project": project.model_dump(mode="json", exclude_none=True),
@@ -264,18 +476,42 @@ def onboard_customer(
 @app.command("billing-plans")
 def billing_plans(out: Path | None = typer.Option(None, "--out", "-o")) -> None:
     """Show built-in monthly quota limits for each billing plan."""
-    payload = {plan.value: {metric.value: limit for metric, limit in limits.items()} for plan, limits in MONTHLY_PLAN_LIMITS.items()}
+    payload = {
+        plan.value: {metric.value: limit for metric, limit in limits.items()}
+        for plan, limits in MONTHLY_PLAN_LIMITS.items()
+    }
     _write_or_print(payload, out=out)
 
 
 @app.command("billing-usage")
-def billing_usage(token: str = typer.Option(..., "--token", envvar="COMMERCELENS_API_KEY"), jobs_db: Path | None = typer.Option(None, "--jobs-db"), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+def billing_usage(
+    token: str = typer.Option(..., "--token", envvar="COMMERCELENS_API_KEY"),
+    jobs_db: Path | None = typer.Option(None, "--jobs-db"),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+) -> None:
     """Show current monthly usage and quota remaining for an API key."""
     key = _job_store(jobs_db).verify_api_key(token)
     if not key:
         raise typer.BadParameter("Invalid API key token.")
     decisions = [quota_decision(key, metric, 0) for metric in UsageMetric]
-    snapshot = BillingUsageSnapshot(account_id=key.account_id, project_id=key.project_id, api_key_id=key.id, billing_plan=key.billing_plan, period_start=decisions[0].period_start, period_end=decisions[0].period_end, blocked=any(not decision.allowed for decision in decisions), items=[BillingUsageItem(metric=decision.metric, used=decision.used, limit=decision.limit, remaining=decision.remaining) for decision in decisions])
+    snapshot = BillingUsageSnapshot(
+        account_id=key.account_id,
+        project_id=key.project_id,
+        api_key_id=key.id,
+        billing_plan=key.billing_plan,
+        period_start=decisions[0].period_start,
+        period_end=decisions[0].period_end,
+        blocked=any(not decision.allowed for decision in decisions),
+        items=[
+            BillingUsageItem(
+                metric=decision.metric,
+                used=decision.used,
+                limit=decision.limit,
+                remaining=decision.remaining,
+            )
+            for decision in decisions
+        ],
+    )
     _write_or_print(snapshot.model_dump(mode="json", exclude_none=True), out=out)
 
 
@@ -308,16 +544,41 @@ def production_check(out: Path | None = typer.Option(None, "--out", "-o")) -> No
 
 
 @app.command("usage-events")
-def usage_events(jobs_db: Path | None = typer.Option(None, "--jobs-db"), account_id: str | None = typer.Option(None, "--account-id"), project_id: str | None = typer.Option(None, "--project-id"), metric: UsageMetric | None = typer.Option(None, "--metric"), since: str | None = typer.Option(None, "--since"), until: str | None = typer.Option(None, "--until"), limit: int = typer.Option(100, "--limit", min=1, max=1000), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+def usage_events(
+    jobs_db: Path | None = typer.Option(None, "--jobs-db"),
+    account_id: str | None = typer.Option(None, "--account-id"),
+    project_id: str | None = typer.Option(None, "--project-id"),
+    metric: UsageMetric | None = typer.Option(None, "--metric"),
+    since: str | None = typer.Option(None, "--since"),
+    until: str | None = typer.Option(None, "--until"),
+    limit: int = typer.Option(100, "--limit", min=1, max=1000),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+) -> None:
     """List hosted usage events."""
-    events = _job_store(jobs_db).list_usage_events(account_id=account_id, project_id=project_id, metric=metric, since=since, until=until, limit=limit)
+    events = _job_store(jobs_db).list_usage_events(
+        account_id=account_id,
+        project_id=project_id,
+        metric=metric,
+        since=since,
+        until=until,
+        limit=limit,
+    )
     _write_or_print([event.model_dump(mode="json", exclude_none=True) for event in events], out=out)
 
 
 @app.command("usage-summary")
-def usage_summary(jobs_db: Path | None = typer.Option(None, "--jobs-db"), account_id: str | None = typer.Option(None, "--account-id"), project_id: str | None = typer.Option(None, "--project-id"), since: str | None = typer.Option(None, "--since"), until: str | None = typer.Option(None, "--until"), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+def usage_summary(
+    jobs_db: Path | None = typer.Option(None, "--jobs-db"),
+    account_id: str | None = typer.Option(None, "--account-id"),
+    project_id: str | None = typer.Option(None, "--project-id"),
+    since: str | None = typer.Option(None, "--since"),
+    until: str | None = typer.Option(None, "--until"),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+) -> None:
     """Summarize hosted usage by metric."""
-    summary = _job_store(jobs_db).usage_summary(account_id=account_id, project_id=project_id, since=since, until=until)
+    summary = _job_store(jobs_db).usage_summary(
+        account_id=account_id, project_id=project_id, since=since, until=until
+    )
     _write_or_print(summary.model_dump(mode="json", exclude_none=True), out=out)
 
 
@@ -332,7 +593,12 @@ def seed_demo(
 
 
 @app.command()
-def history(product_key: str = typer.Argument(...), db: Path = typer.Option(Path("commercelens.db"), "--db"), limit: int = typer.Option(20, "--limit", min=1, max=1000), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+def history(
+    product_key: str = typer.Argument(...),
+    db: Path = typer.Option(Path("commercelens.db"), "--db"),
+    limit: int = typer.Option(20, "--limit", min=1, max=1000),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+) -> None:
     """Show price history for a product key."""
     store = PriceSnapshotStore(db)
     snapshots = [snapshot.__dict__ for snapshot in store.history(product_key, limit=limit)]
@@ -340,7 +606,10 @@ def history(product_key: str = typer.Argument(...), db: Path = typer.Option(Path
 
 
 @app.command()
-def changes(db: Path = typer.Option(Path("commercelens.db"), "--db"), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+def changes(
+    db: Path = typer.Option(Path("commercelens.db"), "--db"),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+) -> None:
     """Show detected latest price and availability changes."""
     store = PriceSnapshotStore(db)
     detected = [change.__dict__ for change in store.detect_changes()]
@@ -348,7 +617,11 @@ def changes(db: Path = typer.Option(Path("commercelens.db"), "--db"), out: Path 
 
 
 @app.command("export-history")
-def export_history(db: Path = typer.Option(Path("commercelens.db"), "--db"), out: Path = typer.Option(..., "--out", "-o"), limit: int = typer.Option(1000, "--limit", min=1, max=100000)) -> None:
+def export_history(
+    db: Path = typer.Option(Path("commercelens.db"), "--db"),
+    out: Path = typer.Option(..., "--out", "-o"),
+    limit: int = typer.Option(1000, "--limit", min=1, max=100000),
+) -> None:
     """Export latest tracked product snapshots as CSV, JSON, or JSONL."""
     store = PriceSnapshotStore(db)
     records = records_from_snapshots(store.list_latest(limit=limit))
@@ -357,7 +630,9 @@ def export_history(db: Path = typer.Option(Path("commercelens.db"), "--db"), out
 
 
 @app.command("load-records")
-def load_records(path: Path = typer.Argument(...), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+def load_records(
+    path: Path = typer.Argument(...), out: Path | None = typer.Option(None, "--out", "-o")
+) -> None:
     """Load a product dataset from txt/csv/json/jsonl and normalize it."""
     result = load_product_records(path)
     payload = result.model_dump(mode="json", exclude_none=True)
@@ -365,12 +640,23 @@ def load_records(path: Path = typer.Argument(...), out: Path | None = typer.Opti
 
 
 @app.command("match-records")
-def match_records(left: Path = typer.Argument(...), right: Path = typer.Argument(...), threshold: float = typer.Option(0.72, "--threshold"), top_k: int = typer.Option(1, "--top-k", min=1, max=10), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+def match_records(
+    left: Path = typer.Argument(...),
+    right: Path = typer.Argument(...),
+    threshold: float = typer.Option(0.72, "--threshold"),
+    top_k: int = typer.Option(1, "--top-k", min=1, max=10),
+    out: Path | None = typer.Option(None, "--out", "-o"),
+) -> None:
     """Match products across two CSV/JSON/JSONL datasets."""
     left_result = load_product_records(left)
     right_result = load_product_records(right)
-    result = match_products(left_result.records, right_result.records, threshold=threshold, top_k=top_k)
-    payload = {"matches": [match.model_dump(mode="json", exclude_none=True) for match in result.matches], "warnings": left_result.warnings + right_result.warnings}
+    result = match_products(
+        left_result.records, right_result.records, threshold=threshold, top_k=top_k
+    )
+    payload = {
+        "matches": [match.model_dump(mode="json", exclude_none=True) for match in result.matches],
+        "warnings": left_result.warnings + right_result.warnings,
+    }
     _write_or_print(payload, out=out)
 
 
@@ -445,7 +731,11 @@ def quality_report(
 
 
 @app.command()
-def serve(host: str = typer.Option("127.0.0.1"), port: int = typer.Option(8000), reload: bool = typer.Option(False)) -> None:
+def serve(
+    host: str = typer.Option("127.0.0.1"),
+    port: int = typer.Option(8000),
+    reload: bool = typer.Option(False),
+) -> None:
     """Run the CommerceLens FastAPI server."""
     import uvicorn
 

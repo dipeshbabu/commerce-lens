@@ -36,7 +36,9 @@ def _parse_config_text(text: str, suffix: str) -> dict[str, Any]:
         try:
             import yaml  # type: ignore
         except ImportError as exc:
-            raise RuntimeError("YAML config requires pyyaml. Install with `pip install pyyaml`.") from exc
+            raise RuntimeError(
+                "YAML config requires pyyaml. Install with `pip install pyyaml`."
+            ) from exc
         parsed = yaml.safe_load(text)
         if not isinstance(parsed, dict):
             raise ValueError("Config file must contain an object at the top level.")

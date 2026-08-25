@@ -3,7 +3,14 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from commercelens.api.main import app
-from commercelens.jobs.models import AccountCreate, AccountStatus, ApiKeyCreate, MemberCreate, MemberRole, ProjectCreate
+from commercelens.jobs.models import (
+    AccountCreate,
+    AccountStatus,
+    ApiKeyCreate,
+    MemberCreate,
+    MemberRole,
+    ProjectCreate,
+)
 from commercelens.jobs.store import JobStore
 
 
@@ -11,7 +18,9 @@ def test_account_project_member_roundtrip(tmp_path: Path) -> None:
     store = JobStore(tmp_path / "jobs.db")
 
     account = store.create_account(AccountCreate(name="Acme Retail", owner="ops@acme.test"))
-    project = store.create_project(account.id, ProjectCreate(name="Competitors", slug="competitors"))
+    project = store.create_project(
+        account.id, ProjectCreate(name="Competitors", slug="competitors")
+    )
     member = store.create_member(
         account.id,
         MemberCreate(email="analyst@acme.test", name="Analyst", role=MemberRole.admin),

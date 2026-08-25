@@ -12,7 +12,9 @@ def require_scope(record: ApiKeyRecord | None, scope: str) -> None:
         return
     if "*" in record.scopes or scope in record.scopes:
         return
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Missing required scope: {scope}")
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN, detail=f"Missing required scope: {scope}"
+    )
 
 
 def quota_decision(record: ApiKeyRecord, metric: UsageMetric, quantity: int = 1) -> QuotaDecision:

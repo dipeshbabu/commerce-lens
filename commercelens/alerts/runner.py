@@ -4,7 +4,13 @@ from pydantic import BaseModel, Field
 
 from commercelens.alerts.config import MonitorConfig, load_monitor_config
 from commercelens.alerts.delivery import AlertDeliveryReport, deliver_alert
-from commercelens.alerts.rules import AlertEvent, AlertRule, event_from_change, rule_matches_change, snapshot_triggered_threshold
+from commercelens.alerts.rules import (
+    AlertEvent,
+    AlertRule,
+    event_from_change,
+    rule_matches_change,
+    snapshot_triggered_threshold,
+)
 from commercelens.core.monitor import monitor_product
 
 

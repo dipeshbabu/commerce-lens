@@ -2,15 +2,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from commercelens.connectors.datasets import ProductRecord, load_product_records, write_product_records
+from commercelens.connectors.datasets import (
+    ProductRecord,
+    load_product_records,
+    write_product_records,
+)
 from commercelens.matching.products import match_products, product_similarity
 
 
 def test_load_csv_product_records(tmp_path: Path) -> None:
     path = tmp_path / "products.csv"
     path.write_text(
-        "url,name,brand,amount,currency\n"
-        "https://example.com/a,Nike Air Max 90,Nike,120,USD\n",
+        "url,name,brand,amount,currency\nhttps://example.com/a,Nike Air Max 90,Nike,120,USD\n",
         encoding="utf-8",
     )
 
@@ -45,10 +48,19 @@ def test_product_similarity_strong_match() -> None:
 
 
 def test_match_products_returns_top_match() -> None:
-    left = [ProductRecord(name="Sony WH-1000XM5 Wireless Headphones", brand="Sony", amount=399, currency="USD")]
+    left = [
+        ProductRecord(
+            name="Sony WH-1000XM5 Wireless Headphones", brand="Sony", amount=399, currency="USD"
+        )
+    ]
     right = [
         ProductRecord(name="Unrelated Backpack", brand="Other", amount=40, currency="USD"),
-        ProductRecord(name="Sony WH1000XM5 Noise Canceling Headphones", brand="Sony", amount=389, currency="USD"),
+        ProductRecord(
+            name="Sony WH1000XM5 Noise Canceling Headphones",
+            brand="Sony",
+            amount=389,
+            currency="USD",
+        ),
     ]
 
     result = match_products(left, right, threshold=0.6)

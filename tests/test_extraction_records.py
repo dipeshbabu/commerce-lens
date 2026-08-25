@@ -3,7 +3,12 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from commercelens.api.main import app
-from commercelens.jobs.models import AccountCreate, ExtractionCreate, ExtractionKind, ExtractionStatus
+from commercelens.jobs.models import (
+    AccountCreate,
+    ExtractionCreate,
+    ExtractionKind,
+    ExtractionStatus,
+)
 from commercelens.jobs.store import JobStore
 
 
@@ -71,7 +76,9 @@ def test_store_records_extractions(tmp_path: Path) -> None:
 
     assert store.get_extraction(record.id, account_id=account.id) == record
     assert store.get_extraction(record.id, account_id="acct_other") is None
-    assert store.list_extractions(account_id=account.id)[0].payload["product"]["name"] == "Demo Shoe"
+    assert (
+        store.list_extractions(account_id=account.id)[0].payload["product"]["name"] == "Demo Shoe"
+    )
 
 
 def test_product_extraction_records_success_and_dashboard(monkeypatch, tmp_path: Path) -> None:

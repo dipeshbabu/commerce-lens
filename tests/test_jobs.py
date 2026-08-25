@@ -6,7 +6,14 @@ from pathlib import Path
 
 from commercelens.alerts.config import AlertRule, MonitorConfig, MonitorTarget
 from commercelens.alerts.rules import AlertCondition
-from commercelens.jobs.models import ApiKeyCreate, JobStatus, MonitoringJobCreate, MonitoringJobUpdate, RunStatus, ScheduleKind
+from commercelens.jobs.models import (
+    ApiKeyCreate,
+    JobStatus,
+    MonitoringJobCreate,
+    MonitoringJobUpdate,
+    RunStatus,
+    ScheduleKind,
+)
 from commercelens.jobs.store import JobStore
 from commercelens.jobs.worker import MonitoringWorker
 
@@ -21,7 +28,9 @@ def sample_config() -> MonitorConfig:
 
 def test_create_list_update_job(tmp_path: Path) -> None:
     store = JobStore(tmp_path / "jobs.db")
-    job = store.create_job(MonitoringJobCreate(name="watch example", config=sample_config(), interval_minutes=5))
+    job = store.create_job(
+        MonitoringJobCreate(name="watch example", config=sample_config(), interval_minutes=5)
+    )
 
     assert job.id.startswith("job_")
     assert job.next_run_at is not None
@@ -50,7 +59,9 @@ def test_manual_job_has_no_next_run(tmp_path: Path) -> None:
 
 def test_claim_due_job_runs_prevents_duplicate_claims(tmp_path: Path) -> None:
     store = JobStore(tmp_path / "jobs.db")
-    job = store.create_job(MonitoringJobCreate(name="watch example", config=sample_config(), interval_minutes=5))
+    job = store.create_job(
+        MonitoringJobCreate(name="watch example", config=sample_config(), interval_minutes=5)
+    )
     job.next_run_at = "2000-01-01T00:00:00+00:00"
     store.save_job(job)
 

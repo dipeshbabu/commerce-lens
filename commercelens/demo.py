@@ -77,7 +77,11 @@ def seed_demo_workspace(store: JobStore) -> dict:
             MonitorTarget(url="https://example.com/products/base-layer", tags=["baselayers"]),
         ],
         rules=[
-            AlertRule(name="major-price-drop", condition=AlertCondition.PERCENT_DROP_AT_LEAST, threshold=10),
+            AlertRule(
+                name="major-price-drop",
+                condition=AlertCondition.PERCENT_DROP_AT_LEAST,
+                threshold=10,
+            ),
             AlertRule(name="back-in-stock", condition=AlertCondition.BACK_IN_STOCK),
             AlertRule(name="availability-change", condition=AlertCondition.AVAILABILITY_CHANGE),
         ],
@@ -106,7 +110,11 @@ def seed_demo_workspace(store: JobStore) -> dict:
             duration_ms=1842,
             result={
                 "events": [
-                    {"product": "Alpine Shell", "change_type": "price_drop", "delta_percent": -12.5},
+                    {
+                        "product": "Alpine Shell",
+                        "change_type": "price_drop",
+                        "delta_percent": -12.5,
+                    },
                     {"product": "Trail Pant", "change_type": "back_in_stock"},
                 ]
             },

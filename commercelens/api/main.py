@@ -15,7 +15,13 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from commercelens.alerts.runner import MonitorRunResult, run_monitor_config, run_monitor_config_file
-from commercelens.api.auth import get_job_store, require_account_active, require_admin_access, require_admin_token, require_api_key
+from commercelens.api.auth import (
+    get_job_store,
+    require_account_active,
+    require_admin_access,
+    require_admin_token,
+    require_api_key,
+)
 from commercelens.api.domain_limits import require_domain_quota, url_domain
 from commercelens.api.quota import quota_decision, require_quota, require_scope
 from commercelens.connectors.datasets import DatasetLoadResult
@@ -27,13 +33,51 @@ from commercelens.connectors.stripe import (
 )
 from commercelens.core.crawler import CatalogCrawlResult, crawl_catalog
 from commercelens.core.fetcher import FetchError, fetch_html
-from commercelens.core.monitor import BatchMonitorResult, MonitorResult, monitor_product, monitor_products
+from commercelens.core.monitor import (
+    BatchMonitorResult,
+    MonitorResult,
+    monitor_product,
+    monitor_products,
+)
 from commercelens.core.renderer import RenderError
 from commercelens.extractors.listing import extract_listing, extract_listing_from_html
 from commercelens.extractors.product import extract_product, extract_product_from_html
 from commercelens.intelligence.price_summary import PriceIntelligenceSummary, summarize_prices
-from commercelens.jobs.failures import classify_failure, failed_extraction_issue, failed_run_issue, recommendation_for_failure
-from commercelens.jobs.models import AccountCreate, AccountRecord, AccountStatus, ApiKeyCreate, ApiKeyCreateResult, ApiKeyRecord, BillingPlan, BillingUsageItem, BillingUsageSnapshot, ExtractionCreate, ExtractionKind, ExtractionRecord, ExtractionStatus, JobRun, JobStatus, MemberCreate, MemberRecord, MemberRole, MonitoringJob, MonitoringJobCreate, MonitoringJobUpdate, ProjectCreate, ProjectRecord, UsageEvent, UsageMetric, UsageSummary, WorkerTickResult
+from commercelens.jobs.failures import (
+    classify_failure,
+    failed_extraction_issue,
+    failed_run_issue,
+    recommendation_for_failure,
+)
+from commercelens.jobs.models import (
+    AccountCreate,
+    AccountRecord,
+    AccountStatus,
+    ApiKeyCreate,
+    ApiKeyCreateResult,
+    ApiKeyRecord,
+    BillingPlan,
+    BillingUsageItem,
+    BillingUsageSnapshot,
+    ExtractionCreate,
+    ExtractionKind,
+    ExtractionRecord,
+    ExtractionStatus,
+    JobRun,
+    JobStatus,
+    MemberCreate,
+    MemberRecord,
+    MemberRole,
+    MonitoringJob,
+    MonitoringJobCreate,
+    MonitoringJobUpdate,
+    ProjectCreate,
+    ProjectRecord,
+    UsageEvent,
+    UsageMetric,
+    UsageSummary,
+    WorkerTickResult,
+)
 from commercelens.jobs.store import JobStore
 from commercelens.jobs.worker import MonitoringWorker, run_job_now
 from commercelens.matching.catalog_diff import CatalogDiffResult, diff_catalogs
@@ -47,9 +91,21 @@ from commercelens.schemas.connectors import (
     PriceSummaryRequest,
     ProductIdentityGraphRequest,
 )
-from commercelens.schemas.dashboard import DashboardSummary, MonitoredTargetSummary, MonitoringOverview
-from commercelens.schemas.listing import CatalogCrawlRequest, ListingExtractionRequest, ListingExtractionResult
-from commercelens.schemas.monitor import MonitorBatchRequest, MonitorProductRequest, PriceHistoryRequest
+from commercelens.schemas.dashboard import (
+    DashboardSummary,
+    MonitoredTargetSummary,
+    MonitoringOverview,
+)
+from commercelens.schemas.listing import (
+    CatalogCrawlRequest,
+    ListingExtractionRequest,
+    ListingExtractionResult,
+)
+from commercelens.schemas.monitor import (
+    MonitorBatchRequest,
+    MonitorProductRequest,
+    PriceHistoryRequest,
+)
 from commercelens.schemas.product import ProductExtractionRequest, ProductExtractionResult
 from commercelens.storage.price_store import PriceSnapshotStore, ProductSnapshot
 from commercelens.version import __version__
@@ -135,12 +191,37 @@ class StripeCheckoutResponse(BaseModel):
 def _usage_context(key: ApiKeyRecord | None) -> dict[str, str | None]:
     if not key:
         return {"account_id": None, "project_id": None, "owner": None, "api_key_id": None}
-    return {"account_id": key.account_id, "project_id": key.project_id, "owner": key.owner, "api_key_id": key.id}
+    return {
+        "account_id": key.account_id,
+        "project_id": key.project_id,
+        "owner": key.owner,
+        "api_key_id": key.id,
+    }
 
 
-def _record_usage(store: JobStore, key: ApiKeyRecord | None, metric: UsageMetric, quantity: int = 1, route: str | None = None, status_code: int | None = None, metadata: dict | None = None) -> None:
+def _record_usage(
+    store: JobStore,
+    key: ApiKeyRecord | None,
+    metric: UsageMetric,
+    quantity: int = 1,
+    route: str | None = None,
+    status_code: int | None = None,
+    metadata: dict | None = None,
+) -> None:
     context = _usage_context(key)
-    store.record_usage(UsageEvent(metric=metric, quantity=quantity, account_id=context["account_id"], project_id=context["project_id"], owner=context["owner"], api_key_id=context["api_key_id"], route=route, status_code=status_code, metadata=metadata or {}))
+    store.record_usage(
+        UsageEvent(
+            metric=metric,
+            quantity=quantity,
+            account_id=context["account_id"],
+            project_id=context["project_id"],
+            owner=context["owner"],
+            api_key_id=context["api_key_id"],
+            route=route,
+            status_code=status_code,
+            metadata=metadata or {},
+        )
+    )
 
 
 def _record_extraction(
@@ -178,7 +259,9 @@ def _record_extraction(
     )
 
 
-def _meter(key: ApiKeyRecord | None, metric: UsageMetric, quantity: int = 1, scope: str | None = None) -> None:
+def _meter(
+    key: ApiKeyRecord | None, metric: UsageMetric, quantity: int = 1, scope: str | None = None
+) -> None:
     if scope:
         require_scope(key, scope)
     require_quota(key, metric, quantity)
@@ -210,7 +293,9 @@ def _portal_key_query(request: Request) -> str:
 def _require_portal_key(request: Request, store: JobStore) -> ApiKeyRecord:
     token = request.headers.get("X-API-Key") or request.query_params.get("api_key")
     if not token:
-        raise HTTPException(status_code=401, detail="Missing api_key query parameter or X-API-Key header.")
+        raise HTTPException(
+            status_code=401, detail="Missing api_key query parameter or X-API-Key header."
+        )
     key = store.verify_api_key(token)
     if not key:
         raise HTTPException(status_code=401, detail="Invalid API key.")
@@ -307,10 +392,7 @@ def _table(headers: list[str], rows: Sequence[Sequence[object]]) -> str:
     head = "".join(f"<th>{_esc(header)}</th>" for header in headers)
     if not rows:
         return f"<table><thead><tr>{head}</tr></thead><tbody><tr><td colspan='{len(headers)}' class='muted'>No records</td></tr></tbody></table>"
-    body = "".join(
-        "<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>"
-        for row in rows
-    )
+    body = "".join("<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>" for row in rows)
     return f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
 
 
@@ -334,7 +416,9 @@ def _recent_issues(
     limit: int = 20,
 ) -> list[dict]:
     issues = [issue for run in runs for issue in [failed_run_issue(run)] if issue]
-    issues.extend(issue for record in extractions for issue in [failed_extraction_issue(record)] if issue)
+    issues.extend(
+        issue for record in extractions for issue in [failed_extraction_issue(record)] if issue
+    )
     return sorted(issues, key=lambda item: str(item.get("created_at") or ""), reverse=True)[:limit]
 
 
@@ -344,7 +428,10 @@ def _failure_summary(issues: Sequence[dict]) -> list[list[object]]:
         failure_class = str(issue.get("failure_class") or "unknown")
         domain = str(issue.get("domain") or "job-run")
         counts[(failure_class, domain)] += 1
-    return [[_esc(failure_class), _esc(domain), _esc(count)] for (failure_class, domain), count in counts.most_common()]
+    return [
+        [_esc(failure_class), _esc(domain), _esc(count)]
+        for (failure_class, domain), count in counts.most_common()
+    ]
 
 
 def _build_monitoring_overview(
@@ -423,26 +510,46 @@ def readiness(store: JobStore = Depends(get_job_store)) -> dict[str, str | bool]
     }
 
 
-@app.post("/v1/accounts", response_model=AccountRecord, dependencies=[Depends(require_admin_access)])
-def create_account_endpoint(request: AccountCreate, store: JobStore = Depends(get_job_store)) -> AccountRecord:
+@app.post(
+    "/v1/accounts", response_model=AccountRecord, dependencies=[Depends(require_admin_access)]
+)
+def create_account_endpoint(
+    request: AccountCreate, store: JobStore = Depends(get_job_store)
+) -> AccountRecord:
     return store.create_account(request)
 
 
-@app.get("/v1/accounts", response_model=list[AccountRecord], dependencies=[Depends(require_admin_access)])
-def list_accounts_endpoint(limit: int = 100, store: JobStore = Depends(get_job_store)) -> list[AccountRecord]:
+@app.get(
+    "/v1/accounts", response_model=list[AccountRecord], dependencies=[Depends(require_admin_access)]
+)
+def list_accounts_endpoint(
+    limit: int = 100, store: JobStore = Depends(get_job_store)
+) -> list[AccountRecord]:
     return store.list_accounts(limit=limit)
 
 
-@app.get("/v1/accounts/{account_id}", response_model=AccountRecord, dependencies=[Depends(require_admin_access)])
-def get_account_endpoint(account_id: str, store: JobStore = Depends(get_job_store)) -> AccountRecord:
+@app.get(
+    "/v1/accounts/{account_id}",
+    response_model=AccountRecord,
+    dependencies=[Depends(require_admin_access)],
+)
+def get_account_endpoint(
+    account_id: str, store: JobStore = Depends(get_job_store)
+) -> AccountRecord:
     account = store.get_account(account_id)
     if not account:
         raise HTTPException(status_code=404, detail="Account not found.")
     return account
 
 
-@app.patch("/v1/accounts/{account_id}", response_model=AccountRecord, dependencies=[Depends(require_admin_access)])
-def update_account_endpoint(account_id: str, request: AccountUpdate, store: JobStore = Depends(get_job_store)) -> AccountRecord:
+@app.patch(
+    "/v1/accounts/{account_id}",
+    response_model=AccountRecord,
+    dependencies=[Depends(require_admin_access)],
+)
+def update_account_endpoint(
+    account_id: str, request: AccountUpdate, store: JobStore = Depends(get_job_store)
+) -> AccountRecord:
     account = store.get_account(account_id)
     if not account:
         raise HTTPException(status_code=404, detail="Account not found.")
@@ -453,38 +560,66 @@ def update_account_endpoint(account_id: str, request: AccountUpdate, store: JobS
     return store.save_account(account)
 
 
-@app.post("/v1/accounts/{account_id}/projects", response_model=ProjectRecord, dependencies=[Depends(require_admin_access)])
-def create_project_endpoint(account_id: str, request: ProjectCreate, store: JobStore = Depends(get_job_store)) -> ProjectRecord:
+@app.post(
+    "/v1/accounts/{account_id}/projects",
+    response_model=ProjectRecord,
+    dependencies=[Depends(require_admin_access)],
+)
+def create_project_endpoint(
+    account_id: str, request: ProjectCreate, store: JobStore = Depends(get_job_store)
+) -> ProjectRecord:
     try:
         return store.create_project(account_id, request)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@app.get("/v1/accounts/{account_id}/projects", response_model=list[ProjectRecord], dependencies=[Depends(require_admin_access)])
-def list_projects_endpoint(account_id: str, limit: int = 100, store: JobStore = Depends(get_job_store)) -> list[ProjectRecord]:
+@app.get(
+    "/v1/accounts/{account_id}/projects",
+    response_model=list[ProjectRecord],
+    dependencies=[Depends(require_admin_access)],
+)
+def list_projects_endpoint(
+    account_id: str, limit: int = 100, store: JobStore = Depends(get_job_store)
+) -> list[ProjectRecord]:
     if not store.get_account(account_id):
         raise HTTPException(status_code=404, detail="Account not found.")
     return store.list_projects(account_id=account_id, limit=limit)
 
 
-@app.post("/v1/accounts/{account_id}/members", response_model=MemberRecord, dependencies=[Depends(require_admin_access)])
-def create_member_endpoint(account_id: str, request: MemberCreate, store: JobStore = Depends(get_job_store)) -> MemberRecord:
+@app.post(
+    "/v1/accounts/{account_id}/members",
+    response_model=MemberRecord,
+    dependencies=[Depends(require_admin_access)],
+)
+def create_member_endpoint(
+    account_id: str, request: MemberCreate, store: JobStore = Depends(get_job_store)
+) -> MemberRecord:
     try:
         return store.create_member(account_id, request)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@app.get("/v1/accounts/{account_id}/members", response_model=list[MemberRecord], dependencies=[Depends(require_admin_access)])
-def list_members_endpoint(account_id: str, limit: int = 100, store: JobStore = Depends(get_job_store)) -> list[MemberRecord]:
+@app.get(
+    "/v1/accounts/{account_id}/members",
+    response_model=list[MemberRecord],
+    dependencies=[Depends(require_admin_access)],
+)
+def list_members_endpoint(
+    account_id: str, limit: int = 100, store: JobStore = Depends(get_job_store)
+) -> list[MemberRecord]:
     if not store.get_account(account_id):
         raise HTTPException(status_code=404, detail="Account not found.")
     return store.list_members(account_id=account_id, limit=limit)
 
 
-@app.post("/v1/onboarding", response_model=OnboardingResult, dependencies=[Depends(require_admin_access)])
-def onboarding_endpoint(request: OnboardingRequest, store: JobStore = Depends(get_job_store)) -> OnboardingResult:
+@app.post(
+    "/v1/onboarding", response_model=OnboardingResult, dependencies=[Depends(require_admin_access)]
+)
+def onboarding_endpoint(
+    request: OnboardingRequest, store: JobStore = Depends(get_job_store)
+) -> OnboardingResult:
     account = store.create_account(
         AccountCreate(
             name=request.account_name,
@@ -522,8 +657,14 @@ def onboarding_endpoint(request: OnboardingRequest, store: JobStore = Depends(ge
     )
 
 
-@app.post("/dashboard/onboarding", response_class=HTMLResponse, dependencies=[Depends(require_admin_access)])
-async def dashboard_onboarding(request: Request, store: JobStore = Depends(get_job_store)) -> HTMLResponse:
+@app.post(
+    "/dashboard/onboarding",
+    response_class=HTMLResponse,
+    dependencies=[Depends(require_admin_access)],
+)
+async def dashboard_onboarding(
+    request: Request, store: JobStore = Depends(get_job_store)
+) -> HTMLResponse:
     form = await _urlencoded_form(request)
     domain_quotas = {}
     raw_domain_quota = form.get("domain_quota", "").strip()
@@ -546,25 +687,46 @@ async def dashboard_onboarding(request: Request, store: JobStore = Depends(get_j
     content = f"""
     <p><a href="/dashboard{token_query}">Dashboard</a></p>
     <h1>Customer Onboarded</h1>
-    {_table(["Field", "Value"], [
-        ["Account", f"<a href='/dashboard/accounts/{_esc(result.account.id)}{token_query}'><code>{_esc(result.account.id)}</code></a>"],
-        ["Project", f"<code>{_esc(result.project.id)}</code>"],
-        ["Owner", _esc(result.member.email)],
-        ["API Key", f"<code>{_esc(result.api_key.id)}</code>"],
-        ["Portal", f"<code>{_esc(result.portal_path)}</code>"],
-    ])}
+    {
+        _table(
+            ["Field", "Value"],
+            [
+                [
+                    "Account",
+                    f"<a href='/dashboard/accounts/{_esc(result.account.id)}{token_query}'><code>{_esc(result.account.id)}</code></a>",
+                ],
+                ["Project", f"<code>{_esc(result.project.id)}</code>"],
+                ["Owner", _esc(result.member.email)],
+                ["API Key", f"<code>{_esc(result.api_key.id)}</code>"],
+                ["Portal", f"<code>{_esc(result.portal_path)}</code>"],
+            ],
+        )
+    }
     """
     return HTMLResponse(_dashboard_shell("Customer Onboarded", content, token_query=token_query))
 
 
 @app.post("/dashboard/accounts/{account_id}/status", dependencies=[Depends(require_admin_access)])
-def dashboard_account_status(account_id: str, status_value: AccountStatus, request: Request, store: JobStore = Depends(get_job_store)) -> RedirectResponse:
+def dashboard_account_status(
+    account_id: str,
+    status_value: AccountStatus,
+    request: Request,
+    store: JobStore = Depends(get_job_store),
+) -> RedirectResponse:
     account = update_account_endpoint(account_id, AccountUpdate(status=status_value), store=store)
-    return RedirectResponse(_dashboard_action(f"/dashboard/accounts/{account.id}", request), status_code=303)
+    return RedirectResponse(
+        _dashboard_action(f"/dashboard/accounts/{account.id}", request), status_code=303
+    )
 
 
-@app.post("/dashboard/accounts/{account_id}/checkout", response_class=HTMLResponse, dependencies=[Depends(require_admin_access)])
-async def dashboard_checkout(account_id: str, request: Request, store: JobStore = Depends(get_job_store)) -> HTMLResponse:
+@app.post(
+    "/dashboard/accounts/{account_id}/checkout",
+    response_class=HTMLResponse,
+    dependencies=[Depends(require_admin_access)],
+)
+async def dashboard_checkout(
+    account_id: str, request: Request, store: JobStore = Depends(get_job_store)
+) -> HTMLResponse:
     form = await _urlencoded_form(request)
     response = stripe_checkout_session_endpoint(
         StripeCheckoutRequest(
@@ -582,11 +744,16 @@ async def dashboard_checkout(account_id: str, request: Request, store: JobStore 
     content = f"""
     <p><a href="/dashboard/accounts/{_esc(account_id)}{token_query}">Account</a></p>
     <h1>Checkout Session</h1>
-    {_table(["Field", "Value"], [
-        ["Session", f"<code>{_esc(response.id)}</code>"],
-        ["Plan", _esc(response.billing_plan.value)],
-        ["URL", f"<a href='{_esc(response.url)}'>{_esc(response.url)}</a>"],
-    ])}
+    {
+        _table(
+            ["Field", "Value"],
+            [
+                ["Session", f"<code>{_esc(response.id)}</code>"],
+                ["Plan", _esc(response.billing_plan.value)],
+                ["URL", f"<a href='{_esc(response.url)}'>{_esc(response.url)}</a>"],
+            ],
+        )
+    }
     """
     return HTMLResponse(_dashboard_shell("Checkout Session", content, token_query=token_query))
 
@@ -600,8 +767,12 @@ def dashboard(request: Request, store: JobStore = Depends(get_job_store)) -> HTM
     extractions = store.list_extractions(limit=50)
     usage = store.usage_summary()
     active_jobs = sum(1 for job in jobs if job.status == JobStatus.active)
-    failed_runs = sum(1 for run in runs if str(run.status) == "RunStatus.failed" or run.status.value == "failed")
-    failed_extractions = sum(1 for record in extractions if record.status == ExtractionStatus.failed)
+    failed_runs = sum(
+        1 for run in runs if str(run.status) == "RunStatus.failed" or run.status.value == "failed"
+    )
+    failed_extractions = sum(
+        1 for record in extractions if record.status == ExtractionStatus.failed
+    )
     issues = _recent_issues(runs, extractions, limit=20)
 
     token_query = _dashboard_token_query(request)
@@ -679,7 +850,7 @@ def dashboard(request: Request, store: JobStore = Depends(get_job_store)) -> HTM
     content = f"""
     <h1>Dashboard</h1>
     <h2>Onboard Customer</h2>
-    <form method="post" action="{_dashboard_action('/dashboard/onboarding', request)}">
+    <form method="post" action="{_dashboard_action("/dashboard/onboarding", request)}">
       <label>Account name<input name="account_name" required></label>
       <label>Owner email<input name="owner_email" type="email" required></label>
       <label>Project name<input name="project_name" value="Competitor Watch"></label>
@@ -715,8 +886,14 @@ def dashboard(request: Request, store: JobStore = Depends(get_job_store)) -> HTM
     return HTMLResponse(_dashboard_shell("Dashboard", content, token_query=token_query))
 
 
-@app.get("/dashboard/accounts/{account_id}", response_class=HTMLResponse, dependencies=[Depends(require_admin_access)])
-def account_dashboard(account_id: str, request: Request, store: JobStore = Depends(get_job_store)) -> HTMLResponse:
+@app.get(
+    "/dashboard/accounts/{account_id}",
+    response_class=HTMLResponse,
+    dependencies=[Depends(require_admin_access)],
+)
+def account_dashboard(
+    account_id: str, request: Request, store: JobStore = Depends(get_job_store)
+) -> HTMLResponse:
     account = store.get_account(account_id)
     if not account:
         raise HTTPException(status_code=404, detail="Account not found.")
@@ -730,16 +907,80 @@ def account_dashboard(account_id: str, request: Request, store: JobStore = Depen
     issues = _recent_issues(runs, extractions, limit=20)
 
     token_query = _dashboard_token_query(request)
-    project_rows = [[f"<code>{_esc(project.id)}</code>", _esc(project.name), _esc(project.slug), _esc(project.updated_at)] for project in projects]
-    member_rows = [[_esc(member.email), _esc(member.role.value), _esc(member.name), _esc(member.updated_at)] for member in members]
-    job_rows = [[f"<code>{_esc(job.id)}</code>", _esc(job.name), _esc(job.project_id), _esc(job.status.value), _esc(job.next_run_at)] for job in jobs]
-    run_rows = [[f"<code>{_esc(run.id)}</code>", f"<code>{_esc(run.job_id)}</code>", _esc(run.status.value), _esc(run.duration_ms), _esc(run.created_at)] for run in runs]
-    key_rows = [[f"<code>{_esc(key.id)}</code>", _esc(key.name), _esc(key.project_id), _esc(key.billing_plan.value), _esc("disabled" if key.disabled else "active")] for key in api_keys]
-    extraction_rows = [[f"<a href='/dashboard/extractions/{_esc(record.id)}{token_query}'><code>{_esc(record.id)}</code></a>", _esc(record.kind.value), _esc(record.status.value), _esc(record.project_id), _esc(record.url), _esc(record.confidence), _esc(record.created_at)] for record in extractions]
+    project_rows = [
+        [
+            f"<code>{_esc(project.id)}</code>",
+            _esc(project.name),
+            _esc(project.slug),
+            _esc(project.updated_at),
+        ]
+        for project in projects
+    ]
+    member_rows = [
+        [_esc(member.email), _esc(member.role.value), _esc(member.name), _esc(member.updated_at)]
+        for member in members
+    ]
+    job_rows = [
+        [
+            f"<code>{_esc(job.id)}</code>",
+            _esc(job.name),
+            _esc(job.project_id),
+            _esc(job.status.value),
+            _esc(job.next_run_at),
+        ]
+        for job in jobs
+    ]
+    run_rows = [
+        [
+            f"<code>{_esc(run.id)}</code>",
+            f"<code>{_esc(run.job_id)}</code>",
+            _esc(run.status.value),
+            _esc(run.duration_ms),
+            _esc(run.created_at),
+        ]
+        for run in runs
+    ]
+    key_rows = [
+        [
+            f"<code>{_esc(key.id)}</code>",
+            _esc(key.name),
+            _esc(key.project_id),
+            _esc(key.billing_plan.value),
+            _esc("disabled" if key.disabled else "active"),
+        ]
+        for key in api_keys
+    ]
+    extraction_rows = [
+        [
+            f"<a href='/dashboard/extractions/{_esc(record.id)}{token_query}'><code>{_esc(record.id)}</code></a>",
+            _esc(record.kind.value),
+            _esc(record.status.value),
+            _esc(record.project_id),
+            _esc(record.url),
+            _esc(record.confidence),
+            _esc(record.created_at),
+        ]
+        for record in extractions
+    ]
     usage_rows = [[_esc(item.metric.value), _esc(item.quantity)] for item in usage.items]
-    issue_rows = [[_esc(issue.get("source")), _esc(issue.get("failure_class")), _esc(issue.get("domain") or issue.get("job_id")), f"<span class='danger'>{_esc(issue.get('error'))}</span>", _esc(issue.get("recommendation"))] for issue in issues]
-    suspend_action = _dashboard_action(f"/dashboard/accounts/{account.id}/status", request, status_value=AccountStatus.suspended.value)
-    reactivate_action = _dashboard_action(f"/dashboard/accounts/{account.id}/status", request, status_value=AccountStatus.active.value)
+    issue_rows = [
+        [
+            _esc(issue.get("source")),
+            _esc(issue.get("failure_class")),
+            _esc(issue.get("domain") or issue.get("job_id")),
+            f"<span class='danger'>{_esc(issue.get('error'))}</span>",
+            _esc(issue.get("recommendation")),
+        ]
+        for issue in issues
+    ]
+    suspend_action = _dashboard_action(
+        f"/dashboard/accounts/{account.id}/status",
+        request,
+        status_value=AccountStatus.suspended.value,
+    )
+    reactivate_action = _dashboard_action(
+        f"/dashboard/accounts/{account.id}/status", request, status_value=AccountStatus.active.value
+    )
     checkout_action = _dashboard_action(f"/dashboard/accounts/{account.id}/checkout", request)
 
     content = f"""
@@ -788,8 +1029,14 @@ def account_dashboard(account_id: str, request: Request, store: JobStore = Depen
     return HTMLResponse(_dashboard_shell(account.name, content, token_query=token_query))
 
 
-@app.get("/dashboard/extractions/{extraction_id}", response_class=HTMLResponse, dependencies=[Depends(require_admin_access)])
-def extraction_dashboard(extraction_id: str, request: Request, store: JobStore = Depends(get_job_store)) -> HTMLResponse:
+@app.get(
+    "/dashboard/extractions/{extraction_id}",
+    response_class=HTMLResponse,
+    dependencies=[Depends(require_admin_access)],
+)
+def extraction_dashboard(
+    extraction_id: str, request: Request, store: JobStore = Depends(get_job_store)
+) -> HTMLResponse:
     record = store.get_extraction(extraction_id)
     if not record:
         raise HTTPException(status_code=404, detail="Extraction not found.")
@@ -810,13 +1057,17 @@ def extraction_dashboard(extraction_id: str, request: Request, store: JobStore =
         ["Recommendation", _esc(record.recommendation)],
         ["Created", _esc(record.created_at)],
     ]
-    product_rows = [
-        ["Name", _esc(product.get("name"))],
-        ["Brand", _esc(product.get("brand"))],
-        ["Availability", _esc(product.get("availability"))],
-        ["Price", _esc((product.get("price") or {}).get("amount"))],
-        ["Currency", _esc((product.get("price") or {}).get("currency"))],
-    ] if product else []
+    product_rows = (
+        [
+            ["Name", _esc(product.get("name"))],
+            ["Brand", _esc(product.get("brand"))],
+            ["Availability", _esc(product.get("availability"))],
+            ["Price", _esc((product.get("price") or {}).get("amount"))],
+            ["Currency", _esc((product.get("price") or {}).get("currency"))],
+        ]
+        if product
+        else []
+    )
     content = f"""
     <p><a href="/dashboard{token_query}">Dashboard</a></p>
     <h1>Extraction</h1>
@@ -905,7 +1156,10 @@ def customer_portal(request: Request, store: JobStore = Depends(get_job_store)) 
     export_rows = [
         ["Jobs", f"<a href='{_portal_href('/portal/export/jobs', token_query)}'>JSON</a>"],
         ["Runs", f"<a href='{_portal_href('/portal/export/runs', token_query)}'>JSON</a>"],
-        ["Extractions", f"<a href='{_portal_href('/portal/export/extractions', token_query)}'>JSON</a>"],
+        [
+            "Extractions",
+            f"<a href='{_portal_href('/portal/export/extractions', token_query)}'>JSON</a>",
+        ],
         ["Usage events", f"<a href='{_portal_href('/portal/export/usage', token_query)}'>JSON</a>"],
     ]
     issue_rows = [
@@ -957,13 +1211,17 @@ def customer_portal(request: Request, store: JobStore = Depends(get_job_store)) 
 
 
 @app.get("/portal/jobs/{job_id}", response_class=HTMLResponse)
-def customer_portal_job(job_id: str, request: Request, store: JobStore = Depends(get_job_store)) -> HTMLResponse:
+def customer_portal_job(
+    job_id: str, request: Request, store: JobStore = Depends(get_job_store)
+) -> HTMLResponse:
     key = _require_portal_key(request, store)
     token_query = _portal_key_query(request)
     job = store.get_job(job_id, account_id=key.account_id, project_id=key.project_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
-    runs = store.list_runs(job_id=job.id, limit=25, account_id=key.account_id, project_id=key.project_id)
+    runs = store.list_runs(
+        job_id=job.id, limit=25, account_id=key.account_id, project_id=key.project_id
+    )
     target_rows = [
         [
             _esc(target.url),
@@ -1000,15 +1258,23 @@ def customer_portal_job(job_id: str, request: Request, store: JobStore = Depends
         ["Interval minutes", _esc(job.interval_minutes)],
         ["Next run", _esc(job.next_run_at)],
         ["Last run", _esc(job.last_run_at)],
-        ["Last error", f"<span class='danger'>{_esc(job.last_error)}</span>" if job.last_error else ""],
-        ["Last failure class", _esc(classify_failure(job.last_error).value if classify_failure(job.last_error) else None)],
+        [
+            "Last error",
+            f"<span class='danger'>{_esc(job.last_error)}</span>" if job.last_error else "",
+        ],
+        [
+            "Last failure class",
+            _esc(
+                classify_failure(job.last_error).value if classify_failure(job.last_error) else None
+            ),
+        ],
         ["Recommendation", _esc(recommendation_for_failure(classify_failure(job.last_error)))],
         ["Tags", _esc(", ".join(job.tags))],
         ["Retries", _esc(job.max_retries)],
         ["Retry backoff seconds", _esc(job.retry_backoff_seconds)],
     ]
     content = f"""
-    <p><a href="{_portal_href('/portal', token_query)}">Overview</a></p>
+    <p><a href="{_portal_href("/portal", token_query)}">Overview</a></p>
     <h1>Monitoring Job</h1>
     {_table(["Field", "Value"], rows)}
     <h2>Targets</h2>
@@ -1022,7 +1288,9 @@ def customer_portal_job(job_id: str, request: Request, store: JobStore = Depends
 
 
 @app.get("/portal/runs/{run_id}", response_class=HTMLResponse)
-def customer_portal_run(run_id: str, request: Request, store: JobStore = Depends(get_job_store)) -> HTMLResponse:
+def customer_portal_run(
+    run_id: str, request: Request, store: JobStore = Depends(get_job_store)
+) -> HTMLResponse:
     key = _require_portal_key(request, store)
     token_query = _portal_key_query(request)
     run = store.get_run(run_id, account_id=key.account_id, project_id=key.project_id)
@@ -1030,7 +1298,10 @@ def customer_portal_run(run_id: str, request: Request, store: JobStore = Depends
         raise HTTPException(status_code=404, detail="Run not found.")
     rows = [
         ["ID", f"<code>{_esc(run.id)}</code>"],
-        ["Job", f"<a href='{_portal_href(f'/portal/jobs/{_esc(run.job_id)}', token_query)}'><code>{_esc(run.job_id)}</code></a>"],
+        [
+            "Job",
+            f"<a href='{_portal_href(f'/portal/jobs/{_esc(run.job_id)}', token_query)}'><code>{_esc(run.job_id)}</code></a>",
+        ],
         ["Status", _esc(run.status.value)],
         ["Attempt", _esc(run.attempt)],
         ["Events", _esc(run.event_count)],
@@ -1045,7 +1316,7 @@ def customer_portal_run(run_id: str, request: Request, store: JobStore = Depends
         ["Recommendation", _esc(run.recommendation)],
     ]
     content = f"""
-    <p><a href="{_portal_href('/portal', token_query)}">Overview</a></p>
+    <p><a href="{_portal_href("/portal", token_query)}">Overview</a></p>
     <h1>Job Run</h1>
     {_table(["Field", "Value"], rows)}
     <h2>Result</h2>
@@ -1055,10 +1326,14 @@ def customer_portal_run(run_id: str, request: Request, store: JobStore = Depends
 
 
 @app.get("/portal/extractions/{extraction_id}", response_class=HTMLResponse)
-def customer_portal_extraction(extraction_id: str, request: Request, store: JobStore = Depends(get_job_store)) -> HTMLResponse:
+def customer_portal_extraction(
+    extraction_id: str, request: Request, store: JobStore = Depends(get_job_store)
+) -> HTMLResponse:
     key = _require_portal_key(request, store)
     token_query = _portal_key_query(request)
-    record = store.get_extraction(extraction_id, account_id=key.account_id, project_id=key.project_id)
+    record = store.get_extraction(
+        extraction_id, account_id=key.account_id, project_id=key.project_id
+    )
     if not record:
         raise HTTPException(status_code=404, detail="Extraction not found.")
     product = (record.payload or {}).get("product", {}) if record.payload else {}
@@ -1074,15 +1349,19 @@ def customer_portal_extraction(extraction_id: str, request: Request, store: JobS
         ["Failure Class", _esc(record.failure_class.value if record.failure_class else None)],
         ["Recommendation", _esc(record.recommendation)],
     ]
-    product_rows = [
-        ["Name", _esc(product.get("name"))],
-        ["Brand", _esc(product.get("brand"))],
-        ["Availability", _esc(product.get("availability"))],
-        ["Price", _esc((product.get("price") or {}).get("amount"))],
-        ["Currency", _esc((product.get("price") or {}).get("currency"))],
-    ] if product else []
+    product_rows = (
+        [
+            ["Name", _esc(product.get("name"))],
+            ["Brand", _esc(product.get("brand"))],
+            ["Availability", _esc(product.get("availability"))],
+            ["Price", _esc((product.get("price") or {}).get("amount"))],
+            ["Currency", _esc((product.get("price") or {}).get("currency"))],
+        ]
+        if product
+        else []
+    )
     content = f"""
-    <p><a href="{_portal_href('/portal', token_query)}">Overview</a></p>
+    <p><a href="{_portal_href("/portal", token_query)}">Overview</a></p>
     <h1>Extraction</h1>
     {_table(["Field", "Value"], rows)}
     <h2>Product Summary</h2>
@@ -1094,86 +1373,226 @@ def customer_portal_extraction(extraction_id: str, request: Request, store: JobS
 
 
 @app.get("/portal/export/{resource}")
-def customer_portal_export(resource: str, request: Request, store: JobStore = Depends(get_job_store)) -> JSONResponse:
+def customer_portal_export(
+    resource: str, request: Request, store: JobStore = Depends(get_job_store)
+) -> JSONResponse:
     key = _require_portal_key(request, store)
     account_id = key.account_id
     project_id = key.project_id
     if resource == "jobs":
-        payload = [job.model_dump(mode="json", exclude_none=True) for job in store.list_jobs(limit=1000, account_id=account_id, project_id=project_id)]
+        payload = [
+            job.model_dump(mode="json", exclude_none=True)
+            for job in store.list_jobs(limit=1000, account_id=account_id, project_id=project_id)
+        ]
     elif resource == "runs":
-        payload = [run.model_dump(mode="json", exclude_none=True) for run in store.list_runs(limit=1000, account_id=account_id, project_id=project_id)]
+        payload = [
+            run.model_dump(mode="json", exclude_none=True)
+            for run in store.list_runs(limit=1000, account_id=account_id, project_id=project_id)
+        ]
     elif resource == "extractions":
-        payload = [record.model_dump(mode="json", exclude_none=True) for record in store.list_extractions(limit=1000, account_id=account_id, project_id=project_id)]
+        payload = [
+            record.model_dump(mode="json", exclude_none=True)
+            for record in store.list_extractions(
+                limit=1000, account_id=account_id, project_id=project_id
+            )
+        ]
     elif resource == "usage":
-        payload = [event.model_dump(mode="json", exclude_none=True) for event in store.list_usage_events(limit=1000, account_id=account_id, project_id=project_id)]
+        payload = [
+            event.model_dump(mode="json", exclude_none=True)
+            for event in store.list_usage_events(
+                limit=1000, account_id=account_id, project_id=project_id
+            )
+        ]
     else:
         raise HTTPException(status_code=404, detail="Export not found.")
     return JSONResponse(
-        content={"account_id": account_id, "project_id": project_id, "resource": resource, "items": payload},
+        content={
+            "account_id": account_id,
+            "project_id": project_id,
+            "resource": resource,
+            "items": payload,
+        },
         headers={"Content-Disposition": f'attachment; filename="commercelens-{resource}.json"'},
     )
 
 
 @app.post("/v1/extract/product", response_model=ProductExtractionResult)
-def extract_product_endpoint(request: ProductExtractionRequest, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> ProductExtractionResult:
+def extract_product_endpoint(
+    request: ProductExtractionRequest,
+    store: JobStore = Depends(get_job_store),
+    key: ApiKeyRecord | None = Depends(require_api_key),
+) -> ProductExtractionResult:
     url = str(request.url) if request.url else None
     _meter(key, UsageMetric.product_extract, scope="extract:write")
     domain = require_domain_quota(store, key, url)
     if not request.url and not request.html:
-        _record_extraction(store, key, ExtractionKind.product, ExtractionStatus.failed, error="Provide either 'url' or 'html'.")
+        _record_extraction(
+            store,
+            key,
+            ExtractionKind.product,
+            ExtractionStatus.failed,
+            error="Provide either 'url' or 'html'.",
+        )
         raise HTTPException(status_code=400, detail="Provide either 'url' or 'html'.")
     if request.llm_fallback:
-        _record_extraction(store, key, ExtractionKind.product, ExtractionStatus.failed, url=str(request.url) if request.url else None, error="LLM fallback is planned for a later phase.")
-        raise HTTPException(status_code=501, detail="LLM fallback is planned for a later phase. Use llm_fallback=false for now.")
+        _record_extraction(
+            store,
+            key,
+            ExtractionKind.product,
+            ExtractionStatus.failed,
+            url=str(request.url) if request.url else None,
+            error="LLM fallback is planned for a later phase.",
+        )
+        raise HTTPException(
+            status_code=501,
+            detail="LLM fallback is planned for a later phase. Use llm_fallback=false for now.",
+        )
     try:
         if request.render:
             if not url:
-                _record_extraction(store, key, ExtractionKind.product, ExtractionStatus.failed, error="render=true requires a URL.", metadata={"render": request.render})
+                _record_extraction(
+                    store,
+                    key,
+                    ExtractionKind.product,
+                    ExtractionStatus.failed,
+                    error="render=true requires a URL.",
+                    metadata={"render": request.render},
+                )
                 raise HTTPException(status_code=400, detail="render=true requires a URL.")
-            result = extract_product(url, render=True, screenshot_path=request.screenshot_path, html_snapshot_path=request.html_snapshot_path)
+            result = extract_product(
+                url,
+                render=True,
+                screenshot_path=request.screenshot_path,
+                html_snapshot_path=request.html_snapshot_path,
+            )
         else:
             html = request.html or (fetch_html(url) if url else None)
             assert html is not None
             result = extract_product_from_html(html, url=url)
         payload = result.model_dump(mode="json", exclude_none=True)
-        _record_extraction(store, key, ExtractionKind.product, ExtractionStatus.succeeded, url=result.url or url, confidence=result.confidence, payload=payload, metadata={"render": request.render, "domain": domain})
-        _record_usage(store, key, UsageMetric.product_extract, route="/v1/extract/product", metadata={"render": request.render, "domain": domain})
+        _record_extraction(
+            store,
+            key,
+            ExtractionKind.product,
+            ExtractionStatus.succeeded,
+            url=result.url or url,
+            confidence=result.confidence,
+            payload=payload,
+            metadata={"render": request.render, "domain": domain},
+        )
+        _record_usage(
+            store,
+            key,
+            UsageMetric.product_extract,
+            route="/v1/extract/product",
+            metadata={"render": request.render, "domain": domain},
+        )
         return result
     except FetchError as exc:
-        _record_extraction(store, key, ExtractionKind.product, ExtractionStatus.failed, url=url, error=str(exc), metadata={"render": request.render})
+        _record_extraction(
+            store,
+            key,
+            ExtractionKind.product,
+            ExtractionStatus.failed,
+            url=url,
+            error=str(exc),
+            metadata={"render": request.render},
+        )
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except RenderError as exc:
-        _record_extraction(store, key, ExtractionKind.product, ExtractionStatus.failed, url=url, error=str(exc), metadata={"render": request.render})
+        _record_extraction(
+            store,
+            key,
+            ExtractionKind.product,
+            ExtractionStatus.failed,
+            url=url,
+            error=str(exc),
+            metadata={"render": request.render},
+        )
         raise HTTPException(status_code=501, detail=str(exc)) from exc
 
 
 @app.post("/v1/extract/listing", response_model=ListingExtractionResult)
-def extract_listing_endpoint(request: ListingExtractionRequest, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> ListingExtractionResult:
+def extract_listing_endpoint(
+    request: ListingExtractionRequest,
+    store: JobStore = Depends(get_job_store),
+    key: ApiKeyRecord | None = Depends(require_api_key),
+) -> ListingExtractionResult:
     url = str(request.url) if request.url else None
     _meter(key, UsageMetric.listing_extract, scope="extract:write")
     domain = require_domain_quota(store, key, url)
     if not request.url and not request.html:
-        _record_extraction(store, key, ExtractionKind.listing, ExtractionStatus.failed, error="Provide either 'url' or 'html'.")
+        _record_extraction(
+            store,
+            key,
+            ExtractionKind.listing,
+            ExtractionStatus.failed,
+            error="Provide either 'url' or 'html'.",
+        )
         raise HTTPException(status_code=400, detail="Provide either 'url' or 'html'.")
     try:
         if request.render:
             if not url:
-                _record_extraction(store, key, ExtractionKind.listing, ExtractionStatus.failed, error="render=true requires a URL.", metadata={"render": request.render})
+                _record_extraction(
+                    store,
+                    key,
+                    ExtractionKind.listing,
+                    ExtractionStatus.failed,
+                    error="render=true requires a URL.",
+                    metadata={"render": request.render},
+                )
                 raise HTTPException(status_code=400, detail="render=true requires a URL.")
-            result = extract_listing(url, render=True, screenshot_path=request.screenshot_path, html_snapshot_path=request.html_snapshot_path)
+            result = extract_listing(
+                url,
+                render=True,
+                screenshot_path=request.screenshot_path,
+                html_snapshot_path=request.html_snapshot_path,
+            )
         else:
             html = request.html or (fetch_html(url) if url else None)
             assert html is not None
             result = extract_listing_from_html(html, url=url)
         payload = result.model_dump(mode="json", exclude_none=True)
-        _record_extraction(store, key, ExtractionKind.listing, ExtractionStatus.succeeded, url=result.url or url, confidence=result.confidence, product_count=result.product_count, payload=payload, metadata={"render": request.render, "domain": domain})
-        _record_usage(store, key, UsageMetric.listing_extract, route="/v1/extract/listing", metadata={"products": len(result.products), "render": request.render, "domain": domain})
+        _record_extraction(
+            store,
+            key,
+            ExtractionKind.listing,
+            ExtractionStatus.succeeded,
+            url=result.url or url,
+            confidence=result.confidence,
+            product_count=result.product_count,
+            payload=payload,
+            metadata={"render": request.render, "domain": domain},
+        )
+        _record_usage(
+            store,
+            key,
+            UsageMetric.listing_extract,
+            route="/v1/extract/listing",
+            metadata={"products": len(result.products), "render": request.render, "domain": domain},
+        )
         return result
     except FetchError as exc:
-        _record_extraction(store, key, ExtractionKind.listing, ExtractionStatus.failed, url=url, error=str(exc), metadata={"render": request.render})
+        _record_extraction(
+            store,
+            key,
+            ExtractionKind.listing,
+            ExtractionStatus.failed,
+            url=url,
+            error=str(exc),
+            metadata={"render": request.render},
+        )
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except RenderError as exc:
-        _record_extraction(store, key, ExtractionKind.listing, ExtractionStatus.failed, url=url, error=str(exc), metadata={"render": request.render})
+        _record_extraction(
+            store,
+            key,
+            ExtractionKind.listing,
+            ExtractionStatus.failed,
+            url=url,
+            error=str(exc),
+            metadata={"render": request.render},
+        )
         raise HTTPException(status_code=501, detail=str(exc)) from exc
 
 
@@ -1213,12 +1632,32 @@ def get_extraction_endpoint(
 
 
 @app.post("/v1/crawl/catalog", response_model=CatalogCrawlResult)
-def crawl_catalog_endpoint(request: CatalogCrawlRequest, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> CatalogCrawlResult:
+def crawl_catalog_endpoint(
+    request: CatalogCrawlRequest,
+    store: JobStore = Depends(get_job_store),
+    key: ApiKeyRecord | None = Depends(require_api_key),
+) -> CatalogCrawlResult:
     _meter(key, UsageMetric.catalog_crawl, scope="crawl:write")
     domain = require_domain_quota(store, key, str(request.url))
     try:
-        result = crawl_catalog(start_url=str(request.url), max_pages=request.max_pages, follow_next_pages=request.follow_next_pages, render=request.render, debug_dir=request.debug_dir)
-        _record_usage(store, key, UsageMetric.catalog_crawl, route="/v1/crawl/catalog", metadata={"pages": result.pages_crawled, "products": len(result.products), "domain": domain})
+        result = crawl_catalog(
+            start_url=str(request.url),
+            max_pages=request.max_pages,
+            follow_next_pages=request.follow_next_pages,
+            render=request.render,
+            debug_dir=request.debug_dir,
+        )
+        _record_usage(
+            store,
+            key,
+            UsageMetric.catalog_crawl,
+            route="/v1/crawl/catalog",
+            metadata={
+                "pages": result.pages_crawled,
+                "products": len(result.products),
+                "domain": domain,
+            },
+        )
         return result
     except FetchError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -1227,12 +1666,22 @@ def crawl_catalog_endpoint(request: CatalogCrawlRequest, store: JobStore = Depen
 
 
 @app.post("/v1/monitor/product", response_model=MonitorResult)
-def monitor_product_endpoint(request: MonitorProductRequest, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> MonitorResult:
+def monitor_product_endpoint(
+    request: MonitorProductRequest,
+    store: JobStore = Depends(get_job_store),
+    key: ApiKeyRecord | None = Depends(require_api_key),
+) -> MonitorResult:
     _meter(key, UsageMetric.monitor_run, scope="monitor:write")
     domain = require_domain_quota(store, key, str(request.url))
     try:
         result = monitor_product(str(request.url), db_path=request.db_path, render=request.render)
-        _record_usage(store, key, UsageMetric.monitor_run, route="/v1/monitor/product", metadata={"render": request.render, "changed": result.has_change, "domain": domain})
+        _record_usage(
+            store,
+            key,
+            UsageMetric.monitor_run,
+            route="/v1/monitor/product",
+            metadata={"render": request.render, "changed": result.has_change, "domain": domain},
+        )
         return result
     except FetchError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -1241,15 +1690,28 @@ def monitor_product_endpoint(request: MonitorProductRequest, store: JobStore = D
 
 
 @app.post("/v1/monitor/batch", response_model=BatchMonitorResult)
-def monitor_batch_endpoint(request: MonitorBatchRequest, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> BatchMonitorResult:
+def monitor_batch_endpoint(
+    request: MonitorBatchRequest,
+    store: JobStore = Depends(get_job_store),
+    key: ApiKeyRecord | None = Depends(require_api_key),
+) -> BatchMonitorResult:
     _meter(key, UsageMetric.monitor_run, quantity=max(1, len(request.urls)), scope="monitor:write")
     domain_counts = Counter(url_domain(str(url)) for url in request.urls)
     for domain, count in domain_counts.items():
         if domain:
             require_domain_quota(store, key, f"https://{domain}", quantity=count)
-    result = monitor_products([str(url) for url in request.urls], db_path=request.db_path, render=request.render)
+    result = monitor_products(
+        [str(url) for url in request.urls], db_path=request.db_path, render=request.render
+    )
     for domain, count in domain_counts.items():
-        _record_usage(store, key, UsageMetric.monitor_run, quantity=count, route="/v1/monitor/batch", metadata={"urls": len(request.urls), "domain": domain})
+        _record_usage(
+            store,
+            key,
+            UsageMetric.monitor_run,
+            quantity=count,
+            route="/v1/monitor/batch",
+            metadata={"urls": len(request.urls), "domain": domain},
+        )
     return result
 
 
@@ -1258,14 +1720,28 @@ def price_history_endpoint(request: PriceHistoryRequest) -> list[ProductSnapshot
     if not request.product_key and not request.url:
         raise HTTPException(status_code=400, detail="Provide either 'product_key' or 'url'.")
     price_store = PriceSnapshotStore(request.db_path)
-    return price_store.history(request.product_key, limit=request.limit) if request.product_key else price_store.history_for_url(str(request.url), limit=request.limit)
+    return (
+        price_store.history(request.product_key, limit=request.limit)
+        if request.product_key
+        else price_store.history_for_url(str(request.url), limit=request.limit)
+    )
 
 
 @app.post("/v1/alerts/run", response_model=MonitorRunResult)
-def run_alert_config_endpoint(request: RunMonitorConfigRequest, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> MonitorRunResult:
+def run_alert_config_endpoint(
+    request: RunMonitorConfigRequest,
+    store: JobStore = Depends(get_job_store),
+    key: ApiKeyRecord | None = Depends(require_api_key),
+) -> MonitorRunResult:
     _meter(key, UsageMetric.monitor_run, scope="monitor:write")
     result = run_monitor_config(request.config, dry_run=request.dry_run, deliver=request.deliver)
-    _record_usage(store, key, UsageMetric.monitor_run, route="/v1/alerts/run", metadata={"events": len(result.events), "warnings": len(result.warnings)})
+    _record_usage(
+        store,
+        key,
+        UsageMetric.monitor_run,
+        route="/v1/alerts/run",
+        metadata={"events": len(result.events), "warnings": len(result.warnings)},
+    )
     return result
 
 
@@ -1275,7 +1751,11 @@ def run_alert_config_file_endpoint(request: RunMonitorConfigFileRequest) -> Moni
 
 
 @app.post("/v1/jobs", response_model=MonitoringJob)
-def create_job_endpoint(request: MonitoringJobCreate, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> MonitoringJob:
+def create_job_endpoint(
+    request: MonitoringJobCreate,
+    store: JobStore = Depends(get_job_store),
+    key: ApiKeyRecord | None = Depends(require_api_key),
+) -> MonitoringJob:
     _meter(key, UsageMetric.api_request, scope="jobs:write")
     if key:
         request.account_id = request.account_id or key.account_id
@@ -1285,96 +1765,230 @@ def create_job_endpoint(request: MonitoringJobCreate, store: JobStore = Depends(
 
 
 @app.get("/v1/jobs", response_model=list[MonitoringJob])
-def list_jobs_endpoint(status: JobStatus | None = None, limit: int = 100, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> list[MonitoringJob]:
+def list_jobs_endpoint(
+    status: JobStatus | None = None,
+    limit: int = 100,
+    store: JobStore = Depends(get_job_store),
+    key: ApiKeyRecord | None = Depends(require_api_key),
+) -> list[MonitoringJob]:
     require_scope(key, "jobs:read")
-    return store.list_jobs(status=status, limit=limit, account_id=key.account_id if key else None, project_id=key.project_id if key else None)
+    return store.list_jobs(
+        status=status,
+        limit=limit,
+        account_id=key.account_id if key else None,
+        project_id=key.project_id if key else None,
+    )
 
 
 @app.get("/v1/jobs/{job_id}", response_model=MonitoringJob)
-def get_job_endpoint(job_id: str, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> MonitoringJob:
+def get_job_endpoint(
+    job_id: str,
+    store: JobStore = Depends(get_job_store),
+    key: ApiKeyRecord | None = Depends(require_api_key),
+) -> MonitoringJob:
     require_scope(key, "jobs:read")
-    job = store.get_job(job_id, account_id=key.account_id if key else None, project_id=key.project_id if key else None)
+    job = store.get_job(
+        job_id,
+        account_id=key.account_id if key else None,
+        project_id=key.project_id if key else None,
+    )
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
     return job
 
 
 @app.patch("/v1/jobs/{job_id}", response_model=MonitoringJob)
-def update_job_endpoint(job_id: str, request: MonitoringJobUpdate, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> MonitoringJob:
+def update_job_endpoint(
+    job_id: str,
+    request: MonitoringJobUpdate,
+    store: JobStore = Depends(get_job_store),
+    key: ApiKeyRecord | None = Depends(require_api_key),
+) -> MonitoringJob:
     require_scope(key, "jobs:write")
-    job = store.update_job(job_id, request, account_id=key.account_id if key else None, project_id=key.project_id if key else None)
+    job = store.update_job(
+        job_id,
+        request,
+        account_id=key.account_id if key else None,
+        project_id=key.project_id if key else None,
+    )
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
     return job
 
 
 @app.delete("/v1/jobs/{job_id}")
-def delete_job_endpoint(job_id: str, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> dict[str, bool]:
+def delete_job_endpoint(
+    job_id: str,
+    store: JobStore = Depends(get_job_store),
+    key: ApiKeyRecord | None = Depends(require_api_key),
+) -> dict[str, bool]:
     require_scope(key, "jobs:write")
-    deleted = store.delete_job(job_id, account_id=key.account_id if key else None, project_id=key.project_id if key else None)
+    deleted = store.delete_job(
+        job_id,
+        account_id=key.account_id if key else None,
+        project_id=key.project_id if key else None,
+    )
     if not deleted:
         raise HTTPException(status_code=404, detail="Job not found.")
     return {"deleted": True}
 
 
 @app.post("/v1/jobs/{job_id}/run", response_model=JobRun)
-def run_job_endpoint(job_id: str, dry_run: bool = False, deliver: bool = True, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> JobRun:
+def run_job_endpoint(
+    job_id: str,
+    dry_run: bool = False,
+    deliver: bool = True,
+    store: JobStore = Depends(get_job_store),
+    key: ApiKeyRecord | None = Depends(require_api_key),
+) -> JobRun:
     _meter(key, UsageMetric.job_run, scope="jobs:write")
-    job = store.get_job(job_id, account_id=key.account_id if key else None, project_id=key.project_id if key else None)
+    job = store.get_job(
+        job_id,
+        account_id=key.account_id if key else None,
+        project_id=key.project_id if key else None,
+    )
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
     return run_job_now(store, job.id, dry_run=dry_run, deliver=deliver)
 
 
 @app.get("/v1/runs", response_model=list[JobRun])
-def list_runs_endpoint(job_id: str | None = None, limit: int = 100, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> list[JobRun]:
+def list_runs_endpoint(
+    job_id: str | None = None,
+    limit: int = 100,
+    store: JobStore = Depends(get_job_store),
+    key: ApiKeyRecord | None = Depends(require_api_key),
+) -> list[JobRun]:
     require_scope(key, "runs:read")
-    return store.list_runs(job_id=job_id, limit=limit, account_id=key.account_id if key else None, project_id=key.project_id if key else None)
+    return store.list_runs(
+        job_id=job_id,
+        limit=limit,
+        account_id=key.account_id if key else None,
+        project_id=key.project_id if key else None,
+    )
 
 
 @app.get("/v1/runs/{run_id}", response_model=JobRun)
-def get_run_endpoint(run_id: str, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> JobRun:
+def get_run_endpoint(
+    run_id: str,
+    store: JobStore = Depends(get_job_store),
+    key: ApiKeyRecord | None = Depends(require_api_key),
+) -> JobRun:
     require_scope(key, "runs:read")
-    run = store.get_run(run_id, account_id=key.account_id if key else None, project_id=key.project_id if key else None)
+    run = store.get_run(
+        run_id,
+        account_id=key.account_id if key else None,
+        project_id=key.project_id if key else None,
+    )
     if not run:
         raise HTTPException(status_code=404, detail="Run not found.")
     return run
 
 
 @app.post("/v1/worker/tick", response_model=WorkerTickResult)
-def worker_tick_endpoint(limit: int = 25, dry_run: bool = False, deliver: bool = True, domain_concurrency: int | None = None, worker_concurrency: int | None = None, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> WorkerTickResult:
+def worker_tick_endpoint(
+    limit: int = 25,
+    dry_run: bool = False,
+    deliver: bool = True,
+    domain_concurrency: int | None = None,
+    worker_concurrency: int | None = None,
+    store: JobStore = Depends(get_job_store),
+    key: ApiKeyRecord | None = Depends(require_api_key),
+) -> WorkerTickResult:
     require_scope(key, "worker:write")
-    return MonitoringWorker(store=store).tick(limit=limit, dry_run=dry_run, deliver=deliver, domain_concurrency=domain_concurrency, worker_concurrency=worker_concurrency)
+    return MonitoringWorker(store=store).tick(
+        limit=limit,
+        dry_run=dry_run,
+        deliver=deliver,
+        domain_concurrency=domain_concurrency,
+        worker_concurrency=worker_concurrency,
+    )
 
 
-@app.post("/v1/api-keys", response_model=ApiKeyCreateResult, dependencies=[Depends(require_admin_token)])
-def create_api_key_endpoint(request: ApiKeyCreate, store: JobStore = Depends(get_job_store)) -> ApiKeyCreateResult:
+@app.post(
+    "/v1/api-keys", response_model=ApiKeyCreateResult, dependencies=[Depends(require_admin_token)]
+)
+def create_api_key_endpoint(
+    request: ApiKeyCreate, store: JobStore = Depends(get_job_store)
+) -> ApiKeyCreateResult:
     return store.create_api_key(request)
 
 
 @app.get("/v1/usage/events", response_model=list[UsageEvent])
-def list_usage_events_endpoint(metric: UsageMetric | None = None, since: str | None = None, until: str | None = None, limit: int = 100, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> list[UsageEvent]:
+def list_usage_events_endpoint(
+    metric: UsageMetric | None = None,
+    since: str | None = None,
+    until: str | None = None,
+    limit: int = 100,
+    store: JobStore = Depends(get_job_store),
+    key: ApiKeyRecord | None = Depends(require_api_key),
+) -> list[UsageEvent]:
     require_scope(key, "usage:read")
-    return store.list_usage_events(account_id=key.account_id if key else None, project_id=key.project_id if key else None, metric=metric, since=since, until=until, limit=limit)
+    return store.list_usage_events(
+        account_id=key.account_id if key else None,
+        project_id=key.project_id if key else None,
+        metric=metric,
+        since=since,
+        until=until,
+        limit=limit,
+    )
 
 
 @app.get("/v1/usage/summary", response_model=UsageSummary)
-def usage_summary_endpoint(since: str | None = None, until: str | None = None, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> UsageSummary:
+def usage_summary_endpoint(
+    since: str | None = None,
+    until: str | None = None,
+    store: JobStore = Depends(get_job_store),
+    key: ApiKeyRecord | None = Depends(require_api_key),
+) -> UsageSummary:
     require_scope(key, "usage:read")
-    return store.usage_summary(account_id=key.account_id if key else None, project_id=key.project_id if key else None, since=since, until=until)
+    return store.usage_summary(
+        account_id=key.account_id if key else None,
+        project_id=key.project_id if key else None,
+        since=since,
+        until=until,
+    )
 
 
 @app.get("/v1/billing/usage", response_model=BillingUsageSnapshot)
-def billing_usage_endpoint(key: ApiKeyRecord | None = Depends(require_api_key)) -> BillingUsageSnapshot:
+def billing_usage_endpoint(
+    key: ApiKeyRecord | None = Depends(require_api_key),
+) -> BillingUsageSnapshot:
     if key is None:
-        raise HTTPException(status_code=400, detail="Billing usage requires API key auth. Set COMMERCELENS_REQUIRE_API_KEY=true.")
+        raise HTTPException(
+            status_code=400,
+            detail="Billing usage requires API key auth. Set COMMERCELENS_REQUIRE_API_KEY=true.",
+        )
     require_scope(key, "usage:read")
     decisions = [quota_decision(key, metric, 0) for metric in UsageMetric]
-    return BillingUsageSnapshot(account_id=key.account_id, project_id=key.project_id, api_key_id=key.id, billing_plan=key.billing_plan, period_start=decisions[0].period_start, period_end=decisions[0].period_end, blocked=any(not decision.allowed for decision in decisions), items=[BillingUsageItem(metric=decision.metric, used=decision.used, limit=decision.limit, remaining=decision.remaining) for decision in decisions])
+    return BillingUsageSnapshot(
+        account_id=key.account_id,
+        project_id=key.project_id,
+        api_key_id=key.id,
+        billing_plan=key.billing_plan,
+        period_start=decisions[0].period_start,
+        period_end=decisions[0].period_end,
+        blocked=any(not decision.allowed for decision in decisions),
+        items=[
+            BillingUsageItem(
+                metric=decision.metric,
+                used=decision.used,
+                limit=decision.limit,
+                remaining=decision.remaining,
+            )
+            for decision in decisions
+        ],
+    )
 
 
-@app.post("/v1/billing/stripe/checkout-session", response_model=StripeCheckoutResponse, dependencies=[Depends(require_admin_token)])
-def stripe_checkout_session_endpoint(request: StripeCheckoutRequest, store: JobStore = Depends(get_job_store)) -> StripeCheckoutResponse:
+@app.post(
+    "/v1/billing/stripe/checkout-session",
+    response_model=StripeCheckoutResponse,
+    dependencies=[Depends(require_admin_token)],
+)
+def stripe_checkout_session_endpoint(
+    request: StripeCheckoutRequest, store: JobStore = Depends(get_job_store)
+) -> StripeCheckoutResponse:
     account = store.get_account(request.account_id)
     if not account:
         raise HTTPException(status_code=404, detail="Account not found.")
@@ -1393,15 +2007,24 @@ def stripe_checkout_session_endpoint(request: StripeCheckoutRequest, store: JobS
             trial_days=request.trial_days,
         )
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Stripe checkout session failed: {exc}") from exc
+        raise HTTPException(
+            status_code=502, detail=f"Stripe checkout session failed: {exc}"
+        ) from exc
     session_id = str(session.get("id") or "")
     session_url = str(session.get("url") or "")
     if not session_id or not session_url:
-        raise HTTPException(status_code=502, detail="Stripe checkout session response did not include id and url.")
+        raise HTTPException(
+            status_code=502, detail="Stripe checkout session response did not include id and url."
+        )
     account.metadata["stripe_checkout_session_id"] = session_id
     account.metadata["stripe_checkout_plan"] = request.billing_plan.value
     store.save_account(account)
-    return StripeCheckoutResponse(id=session_id, url=session_url, account_id=request.account_id, billing_plan=request.billing_plan)
+    return StripeCheckoutResponse(
+        id=session_id,
+        url=session_url,
+        account_id=request.account_id,
+        billing_plan=request.billing_plan,
+    )
 
 
 @app.get("/v1/monitoring/overview", response_model=MonitoringOverview)
@@ -1445,7 +2068,9 @@ def failure_metrics_endpoint(store: JobStore = Depends(get_job_store)) -> dict:
     runs = store.list_runs(limit=1000)
     extractions = store.list_extractions(limit=1000)
     issues = _recent_issues(runs, extractions, limit=1000)
-    by_class: Counter[str] = Counter(str(issue.get("failure_class") or "unknown") for issue in issues)
+    by_class: Counter[str] = Counter(
+        str(issue.get("failure_class") or "unknown") for issue in issues
+    )
     by_domain: Counter[str] = Counter(str(issue.get("domain") or "job-run") for issue in issues)
     return {
         "issue_count": len(issues),
@@ -1461,7 +2086,10 @@ def dashboard_summary_endpoint(
     key: ApiKeyRecord | None = Depends(require_api_key),
 ) -> DashboardSummary:
     if key is None:
-        raise HTTPException(status_code=400, detail="Dashboard summary requires API key auth. Set COMMERCELENS_REQUIRE_API_KEY=true.")
+        raise HTTPException(
+            status_code=400,
+            detail="Dashboard summary requires API key auth. Set COMMERCELENS_REQUIRE_API_KEY=true.",
+        )
     require_scope(key, "usage:read")
     account_id = key.account_id
     project_id = key.project_id
@@ -1498,7 +2126,9 @@ def dashboard_summary_endpoint(
             "runs": len(runs),
             "failed_runs": sum(1 for run in runs if run.status.value == "failed"),
             "extractions": len(extractions),
-            "failed_extractions": sum(1 for record in extractions if record.status == ExtractionStatus.failed),
+            "failed_extractions": sum(
+                1 for record in extractions if record.status == ExtractionStatus.failed
+            ),
         },
         billing=billing,
         usage=usage,
@@ -1537,10 +2167,26 @@ def normalize_records_endpoint(request: NormalizeRecordsRequest) -> DatasetLoadR
 
 
 @app.post("/v1/match/products", response_model=ProductMatchResult)
-def match_products_endpoint(request: MatchProductsRequest, store: JobStore = Depends(get_job_store), key: ApiKeyRecord | None = Depends(require_api_key)) -> ProductMatchResult:
+def match_products_endpoint(
+    request: MatchProductsRequest,
+    store: JobStore = Depends(get_job_store),
+    key: ApiKeyRecord | None = Depends(require_api_key),
+) -> ProductMatchResult:
     _meter(key, UsageMetric.match_request, scope="match:write")
-    result = match_products(request.left, request.right, threshold=request.threshold, top_k=request.top_k)
-    _record_usage(store, key, UsageMetric.match_request, route="/v1/match/products", metadata={"left": len(request.left), "right": len(request.right), "matches": len(result.matches)})
+    result = match_products(
+        request.left, request.right, threshold=request.threshold, top_k=request.top_k
+    )
+    _record_usage(
+        store,
+        key,
+        UsageMetric.match_request,
+        route="/v1/match/products",
+        metadata={
+            "left": len(request.left),
+            "right": len(request.right),
+            "matches": len(result.matches),
+        },
+    )
     return result
 
 

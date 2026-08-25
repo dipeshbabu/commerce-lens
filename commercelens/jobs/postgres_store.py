@@ -72,17 +72,33 @@ class PostgresJobStore:
     def save_account(self, account: AccountRecord) -> AccountRecord:
         account.updated_at = utc_now_iso()
         with self._connect() as conn:
-            conn.execute("""INSERT INTO accounts (id, payload, name, owner, billing_plan, status, created_at, updated_at) VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, %s) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, name=excluded.name, owner=excluded.owner, billing_plan=excluded.billing_plan, status=excluded.status, updated_at=excluded.updated_at""", (account.id, account.model_dump_json(exclude_none=True), account.name, account.owner, account.billing_plan.value, account.status.value, account.created_at, account.updated_at))
+            conn.execute(
+                """INSERT INTO accounts (id, payload, name, owner, billing_plan, status, created_at, updated_at) VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, %s) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, name=excluded.name, owner=excluded.owner, billing_plan=excluded.billing_plan, status=excluded.status, updated_at=excluded.updated_at""",
+                (
+                    account.id,
+                    account.model_dump_json(exclude_none=True),
+                    account.name,
+                    account.owner,
+                    account.billing_plan.value,
+                    account.status.value,
+                    account.created_at,
+                    account.updated_at,
+                ),
+            )
         return account
 
     def get_account(self, account_id: str) -> AccountRecord | None:
         with self._connect() as conn:
-            row = conn.execute("SELECT payload FROM accounts WHERE id = %s", (account_id,)).fetchone()
+            row = conn.execute(
+                "SELECT payload FROM accounts WHERE id = %s", (account_id,)
+            ).fetchone()
         return AccountRecord.model_validate(row["payload"]) if row else None
 
     def list_accounts(self, limit: int = 100) -> list[AccountRecord]:
         with self._connect() as conn:
-            rows = conn.execute("SELECT payload FROM accounts ORDER BY updated_at DESC LIMIT %s", (limit,)).fetchall()
+            rows = conn.execute(
+                "SELECT payload FROM accounts ORDER BY updated_at DESC LIMIT %s", (limit,)
+            ).fetchall()
         return [AccountRecord.model_validate(row["payload"]) for row in rows]
 
     def create_project(self, account_id: str, request: ProjectCreate) -> ProjectRecord:
@@ -95,7 +111,18 @@ class PostgresJobStore:
     def save_project(self, project: ProjectRecord) -> ProjectRecord:
         project.updated_at = utc_now_iso()
         with self._connect() as conn:
-            conn.execute("""INSERT INTO projects (id, account_id, payload, name, slug, created_at, updated_at) VALUES (%s, %s, %s::jsonb, %s, %s, %s, %s) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, name=excluded.name, slug=excluded.slug, updated_at=excluded.updated_at""", (project.id, project.account_id, project.model_dump_json(exclude_none=True), project.name, project.slug, project.created_at, project.updated_at))
+            conn.execute(
+                """INSERT INTO projects (id, account_id, payload, name, slug, created_at, updated_at) VALUES (%s, %s, %s::jsonb, %s, %s, %s, %s) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, name=excluded.name, slug=excluded.slug, updated_at=excluded.updated_at""",
+                (
+                    project.id,
+                    project.account_id,
+                    project.model_dump_json(exclude_none=True),
+                    project.name,
+                    project.slug,
+                    project.created_at,
+                    project.updated_at,
+                ),
+            )
         return project
 
     def get_project(self, project_id: str, account_id: str | None = None) -> ProjectRecord | None:
@@ -130,32 +157,75 @@ class PostgresJobStore:
     def save_member(self, member: MemberRecord) -> MemberRecord:
         member.updated_at = utc_now_iso()
         with self._connect() as conn:
-            conn.execute("""INSERT INTO account_members (id, account_id, payload, email, role, created_at, updated_at) VALUES (%s, %s, %s::jsonb, %s, %s, %s, %s) ON CONFLICT(account_id, email) DO UPDATE SET payload=excluded.payload, role=excluded.role, updated_at=excluded.updated_at""", (member.id, member.account_id, member.model_dump_json(exclude_none=True), member.email.lower(), member.role.value, member.created_at, member.updated_at))
+            conn.execute(
+                """INSERT INTO account_members (id, account_id, payload, email, role, created_at, updated_at) VALUES (%s, %s, %s::jsonb, %s, %s, %s, %s) ON CONFLICT(account_id, email) DO UPDATE SET payload=excluded.payload, role=excluded.role, updated_at=excluded.updated_at""",
+                (
+                    member.id,
+                    member.account_id,
+                    member.model_dump_json(exclude_none=True),
+                    member.email.lower(),
+                    member.role.value,
+                    member.created_at,
+                    member.updated_at,
+                ),
+            )
         return member
 
     def list_members(self, account_id: str, limit: int = 100) -> list[MemberRecord]:
         with self._connect() as conn:
-            rows = conn.execute("SELECT payload FROM account_members WHERE account_id = %s ORDER BY updated_at DESC LIMIT %s", (account_id, limit)).fetchall()
+            rows = conn.execute(
+                "SELECT payload FROM account_members WHERE account_id = %s ORDER BY updated_at DESC LIMIT %s",
+                (account_id, limit),
+            ).fetchall()
         return [MemberRecord.model_validate(row["payload"]) for row in rows]
 
     def create_job(self, request: MonitoringJobCreate) -> MonitoringJob:
         job = MonitoringJob(**request.model_dump())
         job.next_run_at = self.compute_next_run(job)
         self.save_job(job)
-        self.record_usage(UsageEvent(metric=UsageMetric.api_request, account_id=job.account_id, project_id=job.project_id, owner=job.owner, job_id=job.id, metadata={"operation": "create_job"}))
+        self.record_usage(
+            UsageEvent(
+                metric=UsageMetric.api_request,
+                account_id=job.account_id,
+                project_id=job.project_id,
+                owner=job.owner,
+                job_id=job.id,
+                metadata={"operation": "create_job"},
+            )
+        )
         return job
 
     def record_extraction(self, request: ExtractionCreate) -> ExtractionRecord:
         record = ExtractionRecord(**request.model_dump())
         if record.error and record.failure_class is None:
-            record.failure_class = classify_failure(record.error, confidence=record.confidence, metadata=record.metadata)
+            record.failure_class = classify_failure(
+                record.error, confidence=record.confidence, metadata=record.metadata
+            )
         if record.failure_class and record.recommendation is None:
             record.recommendation = recommendation_for_failure(record.failure_class)
         with self._connect() as conn:
-            conn.execute("""INSERT INTO extraction_records (id, payload, kind, status, url, account_id, project_id, owner, api_key_id, confidence, product_count, created_at) VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""", (record.id, record.model_dump_json(exclude_none=True), record.kind.value, record.status.value, record.url, record.account_id, record.project_id, record.owner, record.api_key_id, record.confidence, record.product_count, record.created_at))
+            conn.execute(
+                """INSERT INTO extraction_records (id, payload, kind, status, url, account_id, project_id, owner, api_key_id, confidence, product_count, created_at) VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (
+                    record.id,
+                    record.model_dump_json(exclude_none=True),
+                    record.kind.value,
+                    record.status.value,
+                    record.url,
+                    record.account_id,
+                    record.project_id,
+                    record.owner,
+                    record.api_key_id,
+                    record.confidence,
+                    record.product_count,
+                    record.created_at,
+                ),
+            )
         return record
 
-    def get_extraction(self, extraction_id: str, account_id: str | None = None, project_id: str | None = None) -> ExtractionRecord | None:
+    def get_extraction(
+        self, extraction_id: str, account_id: str | None = None, project_id: str | None = None
+    ) -> ExtractionRecord | None:
         query = "SELECT payload FROM extraction_records WHERE id = %s"
         params: list[object] = [extraction_id]
         query, params = self._add_tenant_filters(query, params, account_id, project_id)
@@ -189,10 +259,24 @@ class PostgresJobStore:
     def save_job(self, job: MonitoringJob) -> MonitoringJob:
         job.updated_at = utc_now_iso()
         with self._connect() as conn:
-            conn.execute("""INSERT INTO monitoring_jobs (id, payload, status, next_run_at, updated_at, account_id, project_id, owner) VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, %s) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, status=excluded.status, next_run_at=excluded.next_run_at, updated_at=excluded.updated_at, account_id=excluded.account_id, project_id=excluded.project_id, owner=excluded.owner""", (job.id, job.model_dump_json(exclude_none=True), job.status.value, job.next_run_at, job.updated_at, job.account_id, job.project_id, job.owner))
+            conn.execute(
+                """INSERT INTO monitoring_jobs (id, payload, status, next_run_at, updated_at, account_id, project_id, owner) VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, %s) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, status=excluded.status, next_run_at=excluded.next_run_at, updated_at=excluded.updated_at, account_id=excluded.account_id, project_id=excluded.project_id, owner=excluded.owner""",
+                (
+                    job.id,
+                    job.model_dump_json(exclude_none=True),
+                    job.status.value,
+                    job.next_run_at,
+                    job.updated_at,
+                    job.account_id,
+                    job.project_id,
+                    job.owner,
+                ),
+            )
         return job
 
-    def get_job(self, job_id: str, account_id: str | None = None, project_id: str | None = None) -> MonitoringJob | None:
+    def get_job(
+        self, job_id: str, account_id: str | None = None, project_id: str | None = None
+    ) -> MonitoringJob | None:
         query = "SELECT payload FROM monitoring_jobs WHERE id = %s"
         params: list[object] = [job_id]
         query, params = self._add_tenant_filters(query, params, account_id, project_id)
@@ -200,7 +284,13 @@ class PostgresJobStore:
             row = conn.execute(query, params).fetchone()
         return MonitoringJob.model_validate(row["payload"]) if row else None
 
-    def list_jobs(self, status: JobStatus | None = None, limit: int = 100, account_id: str | None = None, project_id: str | None = None) -> list[MonitoringJob]:
+    def list_jobs(
+        self,
+        status: JobStatus | None = None,
+        limit: int = 100,
+        account_id: str | None = None,
+        project_id: str | None = None,
+    ) -> list[MonitoringJob]:
         query = "SELECT payload FROM monitoring_jobs WHERE TRUE"
         params: list[object] = []
         if status:
@@ -213,20 +303,30 @@ class PostgresJobStore:
             rows = conn.execute(query, params).fetchall()
         return [MonitoringJob.model_validate(row["payload"]) for row in rows]
 
-    def update_job(self, job_id: str, request: MonitoringJobUpdate, account_id: str | None = None, project_id: str | None = None) -> MonitoringJob | None:
+    def update_job(
+        self,
+        job_id: str,
+        request: MonitoringJobUpdate,
+        account_id: str | None = None,
+        project_id: str | None = None,
+    ) -> MonitoringJob | None:
         job = self.get_job(job_id, account_id=account_id, project_id=project_id)
         if not job:
             return None
         updates = request.model_dump(exclude_unset=True)
         for key, value in updates.items():
             setattr(job, key, value)
-        if job.status == JobStatus.active and ("interval_minutes" in updates or "schedule_kind" in updates or not job.next_run_at):
+        if job.status == JobStatus.active and (
+            "interval_minutes" in updates or "schedule_kind" in updates or not job.next_run_at
+        ):
             job.next_run_at = self.compute_next_run(job)
         if job.status != JobStatus.active:
             job.next_run_at = None
         return self.save_job(job)
 
-    def delete_job(self, job_id: str, account_id: str | None = None, project_id: str | None = None) -> bool:
+    def delete_job(
+        self, job_id: str, account_id: str | None = None, project_id: str | None = None
+    ) -> bool:
         query = "DELETE FROM monitoring_jobs WHERE id = %s"
         params: list[object] = [job_id]
         query, params = self._add_tenant_filters(query, params, account_id, project_id)
@@ -237,7 +337,10 @@ class PostgresJobStore:
     def due_jobs(self, now_iso: str | None = None, limit: int = 50) -> list[MonitoringJob]:
         now_iso = now_iso or utc_now_iso()
         with self._connect() as conn:
-            rows = conn.execute("SELECT payload FROM monitoring_jobs WHERE status = %s AND next_run_at IS NOT NULL AND next_run_at <= %s ORDER BY next_run_at ASC LIMIT %s", (JobStatus.active.value, now_iso, limit)).fetchall()
+            rows = conn.execute(
+                "SELECT payload FROM monitoring_jobs WHERE status = %s AND next_run_at IS NOT NULL AND next_run_at <= %s ORDER BY next_run_at ASC LIMIT %s",
+                (JobStatus.active.value, now_iso, limit),
+            ).fetchall()
         return [MonitoringJob.model_validate(row["payload"]) for row in rows]
 
     def claim_due_job_runs(
@@ -310,14 +413,23 @@ class PostgresJobStore:
         return claims
 
     def mark_job_run_started(self, job: MonitoringJob) -> JobRun:
-        run = JobRun(job_id=job.id, status=RunStatus.running, started_at=utc_now_iso(), account_id=job.account_id, project_id=job.project_id, owner=job.owner)
+        run = JobRun(
+            job_id=job.id,
+            status=RunStatus.running,
+            started_at=utc_now_iso(),
+            account_id=job.account_id,
+            project_id=job.project_id,
+            owner=job.owner,
+        )
         self.save_run(run)
         job.last_run_at = run.started_at
         job.next_run_at = None
         self.save_job(job)
         return run
 
-    def complete_run(self, run: JobRun, result: dict, event_count: int, delivery_count: int, warning_count: int) -> JobRun:
+    def complete_run(
+        self, run: JobRun, result: dict, event_count: int, delivery_count: int, warning_count: int
+    ) -> JobRun:
         run.status = RunStatus.succeeded
         run.finished_at = utc_now_iso()
         run.duration_ms = duration_ms(run.started_at, run.finished_at)
@@ -326,11 +438,41 @@ class PostgresJobStore:
         run.delivery_count = delivery_count
         run.warning_count = warning_count
         self.save_run(run)
-        self.record_usage(UsageEvent(metric=UsageMetric.job_run, account_id=run.account_id, project_id=run.project_id, owner=run.owner, job_id=run.job_id, run_id=run.id, metadata={"status": "succeeded", "duration_ms": run.duration_ms}))
+        self.record_usage(
+            UsageEvent(
+                metric=UsageMetric.job_run,
+                account_id=run.account_id,
+                project_id=run.project_id,
+                owner=run.owner,
+                job_id=run.job_id,
+                run_id=run.id,
+                metadata={"status": "succeeded", "duration_ms": run.duration_ms},
+            )
+        )
         if event_count:
-            self.record_usage(UsageEvent(metric=UsageMetric.alert_event, quantity=event_count, account_id=run.account_id, project_id=run.project_id, owner=run.owner, job_id=run.job_id, run_id=run.id))
+            self.record_usage(
+                UsageEvent(
+                    metric=UsageMetric.alert_event,
+                    quantity=event_count,
+                    account_id=run.account_id,
+                    project_id=run.project_id,
+                    owner=run.owner,
+                    job_id=run.job_id,
+                    run_id=run.id,
+                )
+            )
         if delivery_count:
-            self.record_usage(UsageEvent(metric=UsageMetric.alert_delivery, quantity=delivery_count, account_id=run.account_id, project_id=run.project_id, owner=run.owner, job_id=run.job_id, run_id=run.id))
+            self.record_usage(
+                UsageEvent(
+                    metric=UsageMetric.alert_delivery,
+                    quantity=delivery_count,
+                    account_id=run.account_id,
+                    project_id=run.project_id,
+                    owner=run.owner,
+                    job_id=run.job_id,
+                    run_id=run.id,
+                )
+            )
         job = self.get_job(run.job_id)
         if job:
             job.last_error = None
@@ -346,11 +488,23 @@ class PostgresJobStore:
         run.failure_class = classify_failure(error)
         run.recommendation = recommendation_for_failure(run.failure_class)
         self.save_run(run)
-        self.record_usage(UsageEvent(metric=UsageMetric.job_run, account_id=run.account_id, project_id=run.project_id, owner=run.owner, job_id=run.job_id, run_id=run.id, metadata={"status": "failed", "error": error, "duration_ms": run.duration_ms}))
+        self.record_usage(
+            UsageEvent(
+                metric=UsageMetric.job_run,
+                account_id=run.account_id,
+                project_id=run.project_id,
+                owner=run.owner,
+                job_id=run.job_id,
+                run_id=run.id,
+                metadata={"status": "failed", "error": error, "duration_ms": run.duration_ms},
+            )
+        )
         job = self.get_job(run.job_id)
         if job:
             job.last_error = error
-            job.next_run_at = self.compute_retry_run(job, run.attempt) if job.status == JobStatus.active else None
+            job.next_run_at = (
+                self.compute_retry_run(job, run.attempt) if job.status == JobStatus.active else None
+            )
             self.save_job(job)
         return run
 
@@ -365,16 +519,34 @@ class PostgresJobStore:
         job = self.get_job(run.job_id)
         if job:
             job.last_error = reason
-            job.next_run_at = self.compute_retry_run(job, run.attempt) if job.status == JobStatus.active else None
+            job.next_run_at = (
+                self.compute_retry_run(job, run.attempt) if job.status == JobStatus.active else None
+            )
             self.save_job(job)
         return run
 
     def save_run(self, run: JobRun) -> JobRun:
         with self._connect() as conn:
-            conn.execute("""INSERT INTO job_runs (id, job_id, payload, status, started_at, finished_at, created_at, account_id, project_id, owner) VALUES (%s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, status=excluded.status, started_at=excluded.started_at, finished_at=excluded.finished_at, account_id=excluded.account_id, project_id=excluded.project_id, owner=excluded.owner""", (run.id, run.job_id, run.model_dump_json(exclude_none=True), run.status.value, run.started_at, run.finished_at, run.created_at, run.account_id, run.project_id, run.owner))
+            conn.execute(
+                """INSERT INTO job_runs (id, job_id, payload, status, started_at, finished_at, created_at, account_id, project_id, owner) VALUES (%s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, status=excluded.status, started_at=excluded.started_at, finished_at=excluded.finished_at, account_id=excluded.account_id, project_id=excluded.project_id, owner=excluded.owner""",
+                (
+                    run.id,
+                    run.job_id,
+                    run.model_dump_json(exclude_none=True),
+                    run.status.value,
+                    run.started_at,
+                    run.finished_at,
+                    run.created_at,
+                    run.account_id,
+                    run.project_id,
+                    run.owner,
+                ),
+            )
         return run
 
-    def get_run(self, run_id: str, account_id: str | None = None, project_id: str | None = None) -> JobRun | None:
+    def get_run(
+        self, run_id: str, account_id: str | None = None, project_id: str | None = None
+    ) -> JobRun | None:
         query = "SELECT payload FROM job_runs WHERE id = %s"
         params: list[object] = [run_id]
         query, params = self._add_tenant_filters(query, params, account_id, project_id)
@@ -382,7 +554,13 @@ class PostgresJobStore:
             row = conn.execute(query, params).fetchone()
         return JobRun.model_validate(row["payload"]) if row else None
 
-    def list_runs(self, job_id: str | None = None, limit: int = 100, account_id: str | None = None, project_id: str | None = None) -> list[JobRun]:
+    def list_runs(
+        self,
+        job_id: str | None = None,
+        limit: int = 100,
+        account_id: str | None = None,
+        project_id: str | None = None,
+    ) -> list[JobRun]:
         query = "SELECT payload FROM job_runs WHERE TRUE"
         params: list[object] = []
         if job_id:
@@ -397,15 +575,42 @@ class PostgresJobStore:
 
     def create_api_key(self, request: ApiKeyCreate) -> ApiKeyCreateResult:
         token = f"cl_{secrets.token_urlsafe(32)}"
-        key = ApiKeyRecord(name=request.name, owner=request.owner, account_id=request.account_id, project_id=request.project_id, scopes=request.scopes, billing_plan=request.billing_plan, monthly_quota_overrides=request.monthly_quota_overrides, monthly_domain_quotas=request.monthly_domain_quotas, token_hash=hashlib.sha256(token.encode("utf-8")).hexdigest(), token_prefix=token[:10])
+        key = ApiKeyRecord(
+            name=request.name,
+            owner=request.owner,
+            account_id=request.account_id,
+            project_id=request.project_id,
+            scopes=request.scopes,
+            billing_plan=request.billing_plan,
+            monthly_quota_overrides=request.monthly_quota_overrides,
+            monthly_domain_quotas=request.monthly_domain_quotas,
+            token_hash=hashlib.sha256(token.encode("utf-8")).hexdigest(),
+            token_prefix=token[:10],
+        )
         with self._connect() as conn:
-            conn.execute("""INSERT INTO api_keys (id, payload, token_hash, token_prefix, disabled, created_at, account_id, project_id, owner) VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s)""", (key.id, key.model_dump_json(exclude_none=True), key.token_hash, key.token_prefix, False, key.created_at, key.account_id, key.project_id, key.owner))
+            conn.execute(
+                """INSERT INTO api_keys (id, payload, token_hash, token_prefix, disabled, created_at, account_id, project_id, owner) VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s)""",
+                (
+                    key.id,
+                    key.model_dump_json(exclude_none=True),
+                    key.token_hash,
+                    key.token_prefix,
+                    False,
+                    key.created_at,
+                    key.account_id,
+                    key.project_id,
+                    key.owner,
+                ),
+            )
         return ApiKeyCreateResult(key=key, token=token)
 
     def verify_api_key(self, token: str) -> ApiKeyRecord | None:
         token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
         with self._connect() as conn:
-            row = conn.execute("SELECT payload FROM api_keys WHERE token_hash = %s AND disabled = FALSE", (token_hash,)).fetchone()
+            row = conn.execute(
+                "SELECT payload FROM api_keys WHERE token_hash = %s AND disabled = FALSE",
+                (token_hash,),
+            ).fetchone()
         if not row:
             return None
         key = ApiKeyRecord.model_validate(row["payload"])
@@ -415,10 +620,22 @@ class PostgresJobStore:
 
     def save_api_key(self, key: ApiKeyRecord) -> ApiKeyRecord:
         with self._connect() as conn:
-            conn.execute("UPDATE api_keys SET payload = %s::jsonb, disabled = %s, account_id = %s, project_id = %s, owner = %s WHERE id = %s", (key.model_dump_json(exclude_none=True), key.disabled, key.account_id, key.project_id, key.owner, key.id))
+            conn.execute(
+                "UPDATE api_keys SET payload = %s::jsonb, disabled = %s, account_id = %s, project_id = %s, owner = %s WHERE id = %s",
+                (
+                    key.model_dump_json(exclude_none=True),
+                    key.disabled,
+                    key.account_id,
+                    key.project_id,
+                    key.owner,
+                    key.id,
+                ),
+            )
         return key
 
-    def list_api_keys(self, account_id: str | None = None, project_id: str | None = None, limit: int = 100) -> list[ApiKeyRecord]:
+    def list_api_keys(
+        self, account_id: str | None = None, project_id: str | None = None, limit: int = 100
+    ) -> list[ApiKeyRecord]:
         query = "SELECT payload FROM api_keys WHERE TRUE"
         params: list[object] = []
         query, params = self._add_tenant_filters(query, params, account_id, project_id)
@@ -430,10 +647,35 @@ class PostgresJobStore:
 
     def record_usage(self, event: UsageEvent) -> UsageEvent:
         with self._connect() as conn:
-            conn.execute("""INSERT INTO usage_events (id, metric, quantity, payload, account_id, project_id, owner, api_key_id, job_id, run_id, route, status_code, created_at) VALUES (%s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s)""", (event.id, event.metric.value, event.quantity, event.model_dump_json(exclude_none=True), event.account_id, event.project_id, event.owner, event.api_key_id, event.job_id, event.run_id, event.route, event.status_code, event.created_at))
+            conn.execute(
+                """INSERT INTO usage_events (id, metric, quantity, payload, account_id, project_id, owner, api_key_id, job_id, run_id, route, status_code, created_at) VALUES (%s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (
+                    event.id,
+                    event.metric.value,
+                    event.quantity,
+                    event.model_dump_json(exclude_none=True),
+                    event.account_id,
+                    event.project_id,
+                    event.owner,
+                    event.api_key_id,
+                    event.job_id,
+                    event.run_id,
+                    event.route,
+                    event.status_code,
+                    event.created_at,
+                ),
+            )
         return event
 
-    def list_usage_events(self, account_id: str | None = None, project_id: str | None = None, metric: UsageMetric | None = None, since: str | None = None, until: str | None = None, limit: int = 100) -> list[UsageEvent]:
+    def list_usage_events(
+        self,
+        account_id: str | None = None,
+        project_id: str | None = None,
+        metric: UsageMetric | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        limit: int = 100,
+    ) -> list[UsageEvent]:
         query = "SELECT payload FROM usage_events WHERE TRUE"
         params: list[object] = []
         query, params = self._add_tenant_filters(query, params, account_id, project_id)
@@ -452,7 +694,13 @@ class PostgresJobStore:
             rows = conn.execute(query, params).fetchall()
         return [UsageEvent.model_validate(row["payload"]) for row in rows]
 
-    def usage_summary(self, account_id: str | None = None, project_id: str | None = None, since: str | None = None, until: str | None = None) -> UsageSummary:
+    def usage_summary(
+        self,
+        account_id: str | None = None,
+        project_id: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+    ) -> UsageSummary:
         query = "SELECT metric, SUM(quantity) AS quantity FROM usage_events WHERE TRUE"
         params: list[object] = []
         query, params = self._add_tenant_filters(query, params, account_id, project_id)
@@ -465,20 +713,47 @@ class PostgresJobStore:
         query += " GROUP BY metric ORDER BY metric ASC"
         with self._connect() as conn:
             rows = conn.execute(query, params).fetchall()
-        items = [UsageSummaryItem(metric=UsageMetric(row["metric"]), quantity=int(row["quantity"] or 0)) for row in rows]
-        return UsageSummary(account_id=account_id, project_id=project_id, since=since, until=until, total_quantity=sum(item.quantity for item in items), items=items)
+        items = [
+            UsageSummaryItem(metric=UsageMetric(row["metric"]), quantity=int(row["quantity"] or 0))
+            for row in rows
+        ]
+        return UsageSummary(
+            account_id=account_id,
+            project_id=project_id,
+            since=since,
+            until=until,
+            total_quantity=sum(item.quantity for item in items),
+            items=items,
+        )
 
     def compute_next_run(self, job: MonitoringJob) -> str | None:
         if job.schedule_kind == ScheduleKind.manual or job.status != JobStatus.active:
             return None
-        return (datetime.now(timezone.utc) + timedelta(minutes=job.interval_minutes)).replace(microsecond=0).isoformat()
+        return (
+            (datetime.now(timezone.utc) + timedelta(minutes=job.interval_minutes))
+            .replace(microsecond=0)
+            .isoformat()
+        )
 
     def compute_retry_run(self, job: MonitoringJob, attempt: int) -> str | None:
         if attempt > job.max_retries:
             return self.compute_next_run(job)
-        return (datetime.now(timezone.utc) + timedelta(seconds=job.retry_backoff_seconds * max(1, attempt))).replace(microsecond=0).isoformat()
+        return (
+            (
+                datetime.now(timezone.utc)
+                + timedelta(seconds=job.retry_backoff_seconds * max(1, attempt))
+            )
+            .replace(microsecond=0)
+            .isoformat()
+        )
 
-    def _add_tenant_filters(self, query: str, params: list[object], account_id: str | None = None, project_id: str | None = None) -> tuple[str, list[object]]:
+    def _add_tenant_filters(
+        self,
+        query: str,
+        params: list[object],
+        account_id: str | None = None,
+        project_id: str | None = None,
+    ) -> tuple[str, list[object]]:
         if account_id:
             query += " AND account_id = %s"
             params.append(account_id)

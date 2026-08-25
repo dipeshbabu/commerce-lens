@@ -74,11 +74,15 @@ def apply_shopify_product_adapter(
 
     if not product.name and data.get("title"):
         product.name = str(data["title"]).strip()
-        fields["name"] = ExtractedField(value=product.name, confidence=0.88, source="shopify_adapter")
+        fields["name"] = ExtractedField(
+            value=product.name, confidence=0.88, source="shopify_adapter"
+        )
 
     if not product.brand and data.get("vendor"):
         product.brand = str(data["vendor"]).strip()
-        fields["brand"] = ExtractedField(value=product.brand, confidence=0.86, source="shopify_adapter")
+        fields["brand"] = ExtractedField(
+            value=product.brand, confidence=0.86, source="shopify_adapter"
+        )
 
     if not product.sku and first_variant.get("sku"):
         product.sku = str(first_variant["sku"]).strip()
