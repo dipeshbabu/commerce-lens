@@ -136,8 +136,9 @@ concurrency controls and queue-depth alerts are configured.
 - Rate limits exist at the edge for anonymous and authenticated traffic.
 - Outbound fetch volume is monitored by domain.
 - High-risk or expensive customer keys have monthly domain quotas.
-- Worker processes set `COMMERCELENS_DOMAIN_CONCURRENCY_LIMIT` or pass
-  `--domain-concurrency` to defer excess same-domain jobs.
+- Worker processes set `COMMERCELENS_WORKER_CONCURRENCY` and
+  `COMMERCELENS_DOMAIN_CONCURRENCY_LIMIT`, or pass
+  `--worker-concurrency` and `--domain-concurrency` to bound active jobs.
 - SMTP/webhook secrets are stored in the platform secret manager.
 - Customer exports and debug snapshots are stored outside the repo.
 

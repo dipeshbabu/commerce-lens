@@ -55,22 +55,25 @@ Run continuously:
 commercelens worker --poll-seconds 60
 ```
 
-Limit same-domain work per worker tick when a target site is sensitive or
-expensive:
+Run independent monitors concurrently while limiting simultaneous work against
+the same domain:
 
 ```bash
-commercelens worker --poll-seconds 60 --domain-concurrency 2
+commercelens worker --poll-seconds 60 --worker-concurrency 4 --domain-concurrency 1
 ```
 
-Or configure it through the environment:
+Or configure both limits through the environment:
 
 ```bash
-export COMMERCELENS_DOMAIN_CONCURRENCY_LIMIT=2
+export COMMERCELENS_WORKER_CONCURRENCY=4
+export COMMERCELENS_DOMAIN_CONCURRENCY_LIMIT=1
 ```
 
-When the limit is reached, excess claimed runs are marked `skipped` with
-`failure_class=queue_deferred` and the job is scheduled for retry using the
-existing backoff policy.
+The worker waits for domain capacity within the current tick. It does not mark a
+healthy claimed run as skipped simply because another run for that domain is
+active. Capacity is released after both successful and failed runs. The default
+worker concurrency is one, preserving sequential execution unless concurrency is
+configured explicitly.
 
 ## Hosted API workflow
 

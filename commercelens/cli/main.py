@@ -185,16 +185,16 @@ def run_job(job_id: str = typer.Argument(...), jobs_db: Path | None = typer.Opti
 
 
 @app.command("worker-tick")
-def worker_tick(jobs_db: Path | None = typer.Option(None, "--jobs-db"), limit: int = typer.Option(25, "--limit", min=1, max=100), dry_run: bool = typer.Option(False, "--dry-run"), no_deliver: bool = typer.Option(False, "--no-deliver"), domain_concurrency: int | None = typer.Option(None, "--domain-concurrency", min=1), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
+def worker_tick(jobs_db: Path | None = typer.Option(None, "--jobs-db"), limit: int = typer.Option(25, "--limit", min=1, max=100), dry_run: bool = typer.Option(False, "--dry-run"), no_deliver: bool = typer.Option(False, "--no-deliver"), domain_concurrency: int | None = typer.Option(None, "--domain-concurrency", min=1), worker_concurrency: int | None = typer.Option(None, "--worker-concurrency", min=1), out: Path | None = typer.Option(None, "--out", "-o")) -> None:
     """Execute due monitoring jobs once."""
-    result = MonitoringWorker(store=_job_store(jobs_db)).tick(limit=limit, dry_run=dry_run, deliver=not no_deliver, domain_concurrency=domain_concurrency)
+    result = MonitoringWorker(store=_job_store(jobs_db)).tick(limit=limit, dry_run=dry_run, deliver=not no_deliver, domain_concurrency=domain_concurrency, worker_concurrency=worker_concurrency)
     _write_or_print(result.model_dump(mode="json", exclude_none=True), out=out)
 
 
 @app.command("worker")
-def worker(jobs_db: Path | None = typer.Option(None, "--jobs-db"), poll_seconds: int = typer.Option(60, "--poll-seconds", min=1), limit: int = typer.Option(25, "--limit", min=1, max=100), dry_run: bool = typer.Option(False, "--dry-run"), no_deliver: bool = typer.Option(False, "--no-deliver"), domain_concurrency: int | None = typer.Option(None, "--domain-concurrency", min=1)) -> None:
+def worker(jobs_db: Path | None = typer.Option(None, "--jobs-db"), poll_seconds: int = typer.Option(60, "--poll-seconds", min=1), limit: int = typer.Option(25, "--limit", min=1, max=100), dry_run: bool = typer.Option(False, "--dry-run"), no_deliver: bool = typer.Option(False, "--no-deliver"), domain_concurrency: int | None = typer.Option(None, "--domain-concurrency", min=1), worker_concurrency: int | None = typer.Option(None, "--worker-concurrency", min=1)) -> None:
     """Run the monitoring worker loop."""
-    MonitoringWorker(store=_job_store(jobs_db)).run_forever(poll_seconds=poll_seconds, limit=limit, dry_run=dry_run, deliver=not no_deliver, domain_concurrency=domain_concurrency)
+    MonitoringWorker(store=_job_store(jobs_db)).run_forever(poll_seconds=poll_seconds, limit=limit, dry_run=dry_run, deliver=not no_deliver, domain_concurrency=domain_concurrency, worker_concurrency=worker_concurrency)
 
 
 @app.command("list-runs")
