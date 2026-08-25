@@ -2,7 +2,9 @@
 
 CommerceLens supports Python 3.10, 3.11, and 3.12. A release must pass the full test matrix,
 type check, coverage floor, distribution build, metadata validation, and installed wheel smoke
-test before a tag is created.
+test before a tag is created. CI also applies the Postgres schema in a temporary database,
+runs deterministic extraction in Chromium, and starts the production Docker image through its
+readiness check.
 
 ## Prepare
 
