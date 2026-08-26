@@ -249,8 +249,7 @@ def test_portal_onboarding_preview_activate_and_manage_monitor(monkeypatch, tmp_
     audited_project = JobStore(db_path).get_project(project.id, account_id=account.id)
     assert audited_project is not None
     audit_operations = {
-        event.get("operation")
-        for event in audited_project.metadata.get("portal_audit_events", [])
+        event.get("operation") for event in audited_project.metadata.get("portal_audit_events", [])
     }
     assert {
         "portal_monitor_activated",
@@ -262,7 +261,9 @@ def test_portal_onboarding_preview_activate_and_manage_monitor(monkeypatch, tmp_
     }.issubset(audit_operations)
 
 
-def test_portal_preview_explains_invalid_and_duplicate_urls_before_save(monkeypatch, tmp_path) -> None:
+def test_portal_preview_explains_invalid_and_duplicate_urls_before_save(
+    monkeypatch, tmp_path
+) -> None:
     db_path = tmp_path / "jobs.db"
     monkeypatch.setenv("COMMERCELENS_JOBS_DB", str(db_path))
     store = JobStore(db_path)

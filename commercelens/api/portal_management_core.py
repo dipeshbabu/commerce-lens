@@ -10,7 +10,12 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 from fastapi import HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from commercelens.alerts.rules import AlertCondition, AlertDestination, AlertDestinationType, AlertRule
+from commercelens.alerts.rules import (
+    AlertCondition,
+    AlertDestination,
+    AlertDestinationType,
+    AlertRule,
+)
 from commercelens.api.domain_limits import require_domain_quota, url_domain
 from commercelens.api.portal_auth import PortalSessionContext
 from commercelens.api.presentation import escape_html as esc, portal_shell
@@ -35,7 +40,9 @@ _MAX_CATEGORY_URLS = 10
 _MAX_TARGETS = 500
 
 
-def _page(title: str, content: str, context: PortalSessionContext, status_code: int = 200) -> HTMLResponse:
+def _page(
+    title: str, content: str, context: PortalSessionContext, status_code: int = 200
+) -> HTMLResponse:
     return HTMLResponse(
         portal_shell(title, content, csrf_token=context.csrf_token),
         status_code=status_code,
@@ -96,7 +103,9 @@ def _preview_allowed(context: PortalSessionContext) -> bool:
 
 def _require_account(context: PortalSessionContext) -> str:
     if not context.key.account_id:
-        raise HTTPException(status_code=403, detail="Portal management requires an account-scoped key.")
+        raise HTTPException(
+            status_code=403, detail="Portal management requires an account-scoped key."
+        )
     return context.key.account_id
 
 
@@ -153,13 +162,19 @@ def _urls_from_csv(raw: str) -> tuple[list[str], list[str]]:
     warnings: list[str] = []
     header = [cell.strip().lower() for cell in rows[0]]
     url_index = next(
-        (index for index, name in enumerate(header) if name in {"url", "product_url", "product url"}),
+        (
+            index
+            for index, name in enumerate(header)
+            if name in {"url", "product_url", "product url"}
+        ),
         None,
     )
     start = 1 if url_index is not None else 0
     if url_index is None:
         url_index = 0
-        warnings.append("No URL column header was found, so CommerceLens used the first CSV column.")
+        warnings.append(
+            "No URL column header was found, so CommerceLens used the first CSV column."
+        )
     urls: list[str] = []
     for row_number, row in enumerate(rows[start:], start=start + 1):
         if url_index >= len(row):
@@ -251,7 +266,9 @@ def _rules_from_form(form: dict[str, str]) -> list[AlertRule]:
     if needs_threshold and threshold is None:
         raise ValueError("This alert condition requires a threshold.")
     destination = _destination(form)
-    destinations = [destination] if destination else [AlertDestination(type=AlertDestinationType.STDOUT)]
+    destinations = (
+        [destination] if destination else [AlertDestination(type=AlertDestinationType.STDOUT)]
+    )
     return [
         AlertRule(
             name=form.get("alert_name", "").strip() or "Portal alert",
@@ -319,7 +336,11 @@ def _record_preview(
             metadata={"render": render, "portal_preview": True},
         )
     )
-    metric = UsageMetric.product_extract if kind == ExtractionKind.product else UsageMetric.listing_extract
+    metric = (
+        UsageMetric.product_extract
+        if kind == ExtractionKind.product
+        else UsageMetric.listing_extract
+    )
     store.record_usage(
         UsageEvent(
             metric=metric,
@@ -476,7 +497,7 @@ def _job_rows(
             f'<form class="action-form" method="post" action="/portal/manage/jobs/{esc(job.id)}/run">{hidden}<button type="submit">Run</button></form>'
             f'<form class="action-form" method="post" action="/portal/manage/jobs/{esc(job.id)}/{status_action}">{hidden}<button type="submit">{status_label}</button></form>'
             f'<form class="action-form" method="post" action="/portal/manage/jobs/{esc(job.id)}/delete">{hidden}<button class="danger-button" type="submit">Delete</button></form>'
-            f'</div>'
+            f"</div>"
         )
         rows.append(
             [
