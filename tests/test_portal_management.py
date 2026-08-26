@@ -12,6 +12,7 @@ from commercelens.jobs.models import (
     ApiKeyCreate,
     JobStatus,
     MonitoringJobCreate,
+    MonitoringJobUpdate,
     ProjectCreate,
 )
 from commercelens.jobs.store import JobStore
@@ -19,12 +20,7 @@ from commercelens.schemas.listing import ListingExtractionResult, ListingProduct
 from commercelens.schemas.product import Availability, Price, Product, ProductExtractionResult
 
 
-def _workspace(
-    store: JobStore,
-    *,
-    account_name: str = "Acme",
-    project_name: str = "Competitive",
-):
+def _workspace(store: JobStore, *, account_name: str = "Acme", project_name: str = "Competitive"):
     account = store.create_account(
         AccountCreate(name=account_name, owner="owner@example.com", status=AccountStatus.active)
     )
@@ -366,3 +362,77 @@ def test_portal_monitor_mutations_require_csrf(monkeypatch, tmp_path) -> None:
 
     assert response.status_code == 403
     assert JobStore(db_path).get_job(job.id).status == JobStatus.active
+
+
+def test_portal_preview_failure_blocks_activation(monkeypatch, tmp_path) -> None:
+    db_path = tmp_path / "jobs.db"
+    monkeypatch.setenv("COMMERCELENS_JOBS_DB", str(db_path))
+    store = JobStore(db_path)
+    account, project = _workspace(store)
+    key = _portal_key(store, account.id, project.id)
+
+    def failed_preview(url: str, render: bool):
+        raise RuntimeError("blocked by upstream")
+
+    monkeypatch.setattr(portal_management_core, "_extract_product_preview", failed_preview)
+    client = TestClient(app, base_url="https://testserver")
+    csrf = _login(client, key.token)
+
+    preview = client.post(
+        "/portal/manage/preview",
+        data={
+            "csrf_token": csrf,
+            "project_id": project.id,
+            "name": "Blocked preview",
+            "urls": "https://shop.example/products/blocked",
+            "schedule_kind": "interval",
+            "interval_minutes": "60",
+            "render": "false",
+            "alert_condition": "",
+        },
+    )
+
+    assert preview.status_code == 422
+    assert "First extraction preview failed" in preview.text
+    assert "Activate monitor" not in preview.text
+
+
+def test_disabled_monitor_cannot_be_run_or_resumed(monkeypatch, tmp_path) -> None:
+    db_path = tmp_path / "jobs.db"
+    monkeypatch.setenv("COMMERCELENS_JOBS_DB", str(db_path))
+    store = JobStore(db_path)
+    account, project = _workspace(store)
+    job = store.create_job(
+        MonitoringJobCreate(
+            name="Disabled monitor",
+            config=MonitorConfig(
+                targets=[MonitorTarget(url="https://shop.example/products/disabled")]
+            ),
+            account_id=account.id,
+            project_id=project.id,
+        )
+    )
+    store.update_job(
+        job.id,
+        MonitoringJobUpdate(status=JobStatus.disabled),
+        account_id=account.id,
+        project_id=project.id,
+    )
+    key = _portal_key(store, account.id, project.id)
+    client = TestClient(app, base_url="https://testserver")
+    csrf = _login(client, key.token)
+
+    run = client.post(
+        f"/portal/manage/jobs/{job.id}/run",
+        data={"csrf_token": csrf, "project_id": project.id},
+        follow_redirects=False,
+    )
+    resume = client.post(
+        f"/portal/manage/jobs/{job.id}/resume",
+        data={"csrf_token": csrf, "project_id": project.id},
+        follow_redirects=False,
+    )
+
+    assert run.status_code == 409
+    assert resume.status_code == 409
+    assert JobStore(db_path).get_job(job.id).status == JobStatus.disabled
