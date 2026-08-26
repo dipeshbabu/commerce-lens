@@ -145,6 +145,8 @@ async def _job_action(
     require_portal_csrf(store, context, form.get("csrf_token"))
     job = _tenant_job(store, context, job_id, form.get("project_id"))
     if operation == "pause":
+        if job.status != JobStatus.active:
+            raise HTTPException(status_code=409, detail="Only an active monitor can be paused.")
         updated = store.update_job(
             job.id,
             MonitoringJobUpdate(status=JobStatus.paused),
@@ -154,6 +156,8 @@ async def _job_action(
         if not updated:
             raise HTTPException(status_code=404, detail="Job not found.")
     elif operation == "resume":
+        if job.status != JobStatus.paused:
+            raise HTTPException(status_code=409, detail="Only a paused monitor can be resumed.")
         updated = store.update_job(
             job.id,
             MonitoringJobUpdate(status=JobStatus.active),
@@ -163,6 +167,8 @@ async def _job_action(
         if not updated:
             raise HTTPException(status_code=404, detail="Job not found.")
     elif operation == "run":
+        if job.status == JobStatus.disabled:
+            raise HTTPException(status_code=409, detail="A disabled monitor cannot be run.")
         require_quota(context.key, UsageMetric.job_run, 1)
         run_job_now(store, job.id)
     elif operation == "delete":
