@@ -337,3 +337,32 @@ def test_portal_monitor_actions_are_tenant_scoped(monkeypatch, tmp_path) -> None
 
     assert response.status_code == 404
     assert JobStore(db_path).get_job(job.id).status == JobStatus.active
+
+
+def test_portal_monitor_mutations_require_csrf(monkeypatch, tmp_path) -> None:
+    db_path = tmp_path / "jobs.db"
+    monkeypatch.setenv("COMMERCELENS_JOBS_DB", str(db_path))
+    store = JobStore(db_path)
+    account, project = _workspace(store)
+    job = store.create_job(
+        MonitoringJobCreate(
+            name="Protected monitor",
+            config=MonitorConfig(
+                targets=[MonitorTarget(url="https://shop.example/products/protected")]
+            ),
+            account_id=account.id,
+            project_id=project.id,
+        )
+    )
+    key = _portal_key(store, account.id, project.id)
+    client = TestClient(app, base_url="https://testserver")
+    _login(client, key.token)
+
+    response = client.post(
+        f"/portal/manage/jobs/{job.id}/pause",
+        data={"csrf_token": "wrong-token", "project_id": project.id},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 403
+    assert JobStore(db_path).get_job(job.id).status == JobStatus.active
