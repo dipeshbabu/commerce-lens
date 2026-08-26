@@ -203,8 +203,8 @@ def _validate_targets(
 
 def _existing_target_urls(
     store: Any,
-    account_id: str,
-    project_id: str,
+    account_id: str | None,
+    project_id: str | None,
     *,
     exclude_job_id: str | None = None,
 ) -> set[str]:
