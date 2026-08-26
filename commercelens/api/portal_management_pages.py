@@ -58,7 +58,8 @@ def portal_manage(
         f'<option value="{esc(project.id)}" {"selected" if selected and project.id == selected.id else ""}>{esc(project.name)} ({esc(project.id)})</option>'
         for project in projects
     )
-    project_selector = f"""
+    project_selector = (
+        f"""
     <section class="panel">
       <h2>Project</h2>
       <form class="inline-form" method="get" action="/portal/manage">
@@ -68,9 +69,12 @@ def portal_manage(
         <button type="submit">Switch project</button>
       </form>
     </section>
-    """ if projects else """
+    """
+        if projects
+        else """
     <section class="panel"><h2>Project</h2><p class="muted">No project is available for this account yet.</p></section>
     """
+    )
     create_project = ""
     if context.key.project_id is None and can_write:
         create_project = f"""
@@ -116,7 +120,10 @@ def portal_manage(
 
 
 @router.post("/portal/manage/projects")
-async def portal_create_project(request: Request, store: Any = Depends(get_job_store)) -> RedirectResponse:
+async def portal_create_project(
+    request: Request,
+    store: Any = Depends(get_job_store),
+) -> RedirectResponse:
     context = require_portal_session(request, store)
     require_scope(context.key, "jobs:write")
     form = await _form(request)
@@ -137,13 +144,15 @@ async def portal_create_project(request: Request, store: Any = Depends(get_job_s
         metadata={"project_name": project.name},
     )
     return RedirectResponse(
-        f"/portal/manage?{urlencode({'project_id': project.id})}",
-        status_code=303,
+        f"/portal/manage?{urlencode({'project_id': project.id})}", status_code=303
     )
 
 
 @router.post("/portal/manage/preview", response_class=HTMLResponse)
-async def portal_monitor_preview(request: Request, store: Any = Depends(get_job_store)) -> HTMLResponse:
+async def portal_monitor_preview(
+    request: Request,
+    store: Any = Depends(get_job_store),
+) -> HTMLResponse:
     context = require_portal_session(request, store)
     require_scope(context.key, "jobs:write")
     require_scope(context.key, "extract:write")
@@ -159,16 +168,43 @@ async def portal_monitor_preview(request: Request, store: Any = Depends(get_job_
     valid_categories, category_errors, category_duplicates = _validate_targets(
         category_raw, set()
     )
-    render = form.get("render", "false").lower() == "true"
     existing = _existing_target_urls(store, context.key.account_id, selected.id)
     valid, errors, duplicates = _validate_targets(direct + csv_urls, existing)
     errors.extend(category_errors)
     duplicates.extend(category_duplicates)
 
+    name = form.get("name", "").strip()
+    if not name:
+        errors.append("Monitor name is required.")
+
+    render_raw = form.get("render", "false").lower()
+    if render_raw not in {"true", "false"}:
+        errors.append("Extraction mode is invalid.")
+    render = render_raw == "true"
+
+    schedule_kind: ScheduleKind | None = None
+    interval_minutes: int | None = None
+    try:
+        schedule_kind = ScheduleKind(form.get("schedule_kind", "interval"))
+        interval_minutes = int(form.get("interval_minutes", "360"))
+        if interval_minutes < 1:
+            raise ValueError("Interval minutes must be at least 1.")
+    except ValueError as exc:
+        errors.append(str(exc))
+
+    try:
+        rules = _rules_from_form(form)
+    except (ValueError, ValidationError) as exc:
+        errors.append(str(exc))
+        rules = []
+
+    if len(valid) > _MAX_TARGETS:
+        errors.append(f"A monitor can contain at most {_MAX_TARGETS} product targets.")
+
     category_products: list[str] = []
     listing_previews: list[dict[str, Any]] = []
     warnings = list(csv_warnings)
-    if valid_categories and not errors:
+    if valid_categories and not errors and not duplicates:
         try:
             category_products, listing_previews, category_warnings = _resolve_category_urls(
                 store,
@@ -190,6 +226,10 @@ async def portal_monitor_preview(request: Request, store: Any = Depends(get_job_
     duplicates.extend(resolved_duplicates)
     if len(resolved) > _MAX_TARGETS:
         errors.append(f"A monitor can contain at most {_MAX_TARGETS} product targets.")
+    if not resolved and not errors and not duplicates:
+        errors.append(
+            "No valid product targets were found. Add a product URL, CSV URL, or a category page that resolves products."
+        )
 
     preview_payload: dict[str, Any] | None = None
     preview_error: str | None = None
@@ -201,16 +241,15 @@ async def portal_monitor_preview(request: Request, store: Any = Depends(get_job_
             render=render,
             project_id=selected.id,
         )
-
-    try:
-        rules = _rules_from_form(form)
-    except (ValueError, ValidationError) as exc:
-        errors.append(str(exc))
-        rules = []
+        if preview_error:
+            errors.append(f"First extraction preview failed: {preview_error}")
 
     validation_rows: list[list[object]] = [
+        ["Monitor name", esc(name or "missing")],
         ["Valid product targets", esc(len(resolved))],
         ["Category pages", esc(len(valid_categories))],
+        ["Schedule", esc(schedule_kind.value if schedule_kind else "invalid")],
+        ["Interval minutes", esc(interval_minutes if interval_minutes is not None else "invalid")],
         ["Alert rules", esc(len(rules))],
         ["Extraction mode", esc("browser rendered" if render else "standard HTML")],
     ]
@@ -299,7 +338,10 @@ async def portal_monitor_preview(request: Request, store: Any = Depends(get_job_
 
 
 @router.post("/portal/manage/monitors")
-async def portal_create_monitor(request: Request, store: Any = Depends(get_job_store)) -> RedirectResponse:
+async def portal_create_monitor(
+    request: Request,
+    store: Any = Depends(get_job_store),
+) -> RedirectResponse:
     context = require_portal_session(request, store)
     require_scope(context.key, "jobs:write")
     form = await _form(request)
