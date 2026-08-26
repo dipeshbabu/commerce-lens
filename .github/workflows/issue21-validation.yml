@@ -36,22 +36,24 @@ jobs:
                   raise SystemExit("FastAPI response import anchor not found")
               text = text.replace(old_import, new_import, 1)
 
-          old_multipart = '''            name = part.get_param("name", header="content-disposition")
-            if not name:
-                continue
-            payload = part.get_payload(decode=True) or b""
-            charset = part.get_content_charset() or "utf-8"
-            result[name] = payload.decode(charset, errors="replace")
-'''
-          new_multipart = '''            name = part.get_param("name", header="content-disposition")
-            if not isinstance(name, str) or not name:
-                continue
-            payload = part.get_payload(decode=True)
-            if not isinstance(payload, bytes):
-                continue
-            charset = part.get_content_charset() or "utf-8"
-            result[name] = payload.decode(charset, errors="replace")
-'''
+          old_multipart = (
+              '            name = part.get_param("name", header="content-disposition")\n'
+              '            if not name:\n'
+              '                continue\n'
+              '            payload = part.get_payload(decode=True) or b""\n'
+              '            charset = part.get_content_charset() or "utf-8"\n'
+              '            result[name] = payload.decode(charset, errors="replace")\n'
+          )
+          new_multipart = (
+              '            name = part.get_param("name", header="content-disposition")\n'
+              '            if not isinstance(name, str) or not name:\n'
+              '                continue\n'
+              '            payload = part.get_payload(decode=True)\n'
+              '            if not isinstance(payload, bytes):\n'
+              '                continue\n'
+              '            charset = part.get_content_charset() or "utf-8"\n'
+              '            result[name] = payload.decode(charset, errors="replace")\n'
+          )
           if old_multipart in text:
               text = text.replace(old_multipart, new_multipart, 1)
           elif new_multipart not in text:
