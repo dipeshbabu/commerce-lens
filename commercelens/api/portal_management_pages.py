@@ -165,7 +165,9 @@ async def portal_monitor_preview(
     direct = _urls_from_text(form.get("urls", ""))
     csv_urls, csv_warnings = _urls_from_csv(form.get("csv_file", ""))
     category_raw = _urls_from_text(form.get("category_urls", ""))
-    valid_categories, category_errors, category_duplicates = _validate_targets(category_raw, set())
+    valid_categories, category_errors, category_duplicates = _validate_targets(
+        category_raw, set()
+    )
     existing = _existing_target_urls(store, context.key.account_id, selected.id)
     valid, errors, duplicates = _validate_targets(direct + csv_urls, existing)
     errors.extend(category_errors)
@@ -286,19 +288,23 @@ async def portal_monitor_preview(
         preview_html = f'<section class="notice error" role="alert"><strong>First extraction could not be previewed.</strong><p>{esc(preview_error)}</p></section>'
     elif listing_previews:
         first = listing_previews[0]
-        preview_html = "<h2>Category extraction preview</h2>" + table(
-            ["Field", "Value"],
-            [
-                ["Category URL", esc(first.get("url"))],
-                ["Products discovered", esc(first.get("product_count"))],
-                ["Confidence", esc(first.get("confidence"))],
-            ],
+        preview_html = (
+            "<h2>Category extraction preview</h2>"
+            + table(
+                ["Field", "Value"],
+                [
+                    ["Category URL", esc(first.get("url"))],
+                    ["Products discovered", esc(first.get("product_count"))],
+                    ["Confidence", esc(first.get("confidence"))],
+                ],
+            )
         )
     else:
         preview_html = '<p class="muted">Add at least one valid product or category URL to preview extraction.</p>'
 
     activation = ""
     if resolved and not problems and preview_payload is not None:
+        resolved_urls_value = "\n".join(resolved)
         activation = f"""
         <form class="form-grid compact" method="post" action="/portal/manage/monitors">
           {_hidden("csrf_token", context.csrf_token)}
@@ -307,7 +313,7 @@ async def portal_monitor_preview(
           {_hidden("schedule_kind", form.get("schedule_kind", "interval"))}
           {_hidden("interval_minutes", form.get("interval_minutes", "360"))}
           {_hidden("render", "true" if render else "false")}
-          {_hidden("resolved_urls", "\n".join(resolved))}
+          {_hidden("resolved_urls", resolved_urls_value)}
           {_hidden("alert_name", form.get("alert_name", ""))}
           {_hidden("alert_condition", form.get("alert_condition", ""))}
           {_hidden("alert_threshold", form.get("alert_threshold", ""))}
