@@ -1,9 +1,8 @@
 # Customer Portal
 
 CommerceLens includes a tenant scoped browser portal for hosted customers and
-demo workspaces. Customers use it to review monitored products, job health,
-recent changes, extraction results, usage, quotas, and exports without operating
-the worker or querying the API directly.
+demo workspaces. Customers can review monitoring results and, when their key has
+write scopes, create and manage monitors without using the CLI or JSON API.
 
 ## Sign In
 
@@ -27,23 +26,27 @@ The API key is sent in the form body and is never added to portal links, browser
 history, or export URLs. Continue sending `X-API-Key` when using JSON API routes;
 that client authentication flow is unchanged.
 
-The key must have these scopes:
+Every portal key must have these read scopes:
 
 - `usage:read`
 - `jobs:read`
 - `runs:read`
 - `extractions:read`
 
-Keys with `*` also work. Suspended accounts and disabled keys cannot start or
-continue a portal session.
+Monitor management additionally requires `jobs:write`. Extraction previews
+require `extract:write`. Keys with `*` have all of these permissions. Suspended
+accounts and disabled keys cannot start or continue a portal session.
+
+A read only key can still use the operational portal. The management page
+explains which additional scopes are required instead of silently widening that
+key's permissions.
 
 ## Session Security
 
 Portal sessions use server stored token hashes and `Secure`, `HttpOnly`, and
-`SameSite=Strict` cookies. State changing portal forms also require a session
-bound CSRF token. Sessions have both an absolute lifetime and an inactivity
-timeout, and users can rotate the current session or sign out from every portal
-page.
+`SameSite=Strict` cookies. State changing portal forms require the session bound
+CSRF token. Sessions have both an absolute lifetime and an inactivity timeout,
+and users can rotate the current session or sign out from every portal page.
 
 Configure the limits in seconds:
 
@@ -55,6 +58,69 @@ COMMERCELENS_PORTAL_IDLE_TIMEOUT_SECONDS=1800
 Both values accept 60 seconds through 7 days. Always serve the portal over HTTPS.
 For local browser testing, use `localhost` or a local TLS proxy so the secure
 cookies are accepted.
+
+## Projects
+
+Open `/portal/manage` to create or select a project before adding monitors.
+
+An account level portal key, where the key has an account ID but no project ID,
+can create projects and switch between projects belonging to that account. A
+project scoped key remains locked to its project. This prevents a browser
+session from moving outside the project boundary encoded by the key.
+
+## Create a Monitor
+
+The monitor onboarding form supports:
+
+- direct product URLs, one per line
+- category or listing URLs
+- CSV imports containing a `url`, `product_url`, or `product url` column
+- interval or manual schedules
+- standard HTML extraction or browser rendered extraction
+- alert rules for price, availability, and general changes
+- Slack, webhook, email, or portal/stdout destinations
+
+Category URLs are onboarding sources rather than persistent monitor targets.
+CommerceLens previews the category extraction, resolves discovered product URLs,
+validates them, and stores the resolved product URLs in the monitor. This keeps
+scheduled jobs compatible with the product monitor runner.
+
+Before activation, CommerceLens checks malformed URLs and duplicates within the
+submission and against monitors already in the selected project. It then runs
+the first product extraction preview. Activation is shown only after validation
+and the preview succeed.
+
+For CSV uploads, the first column is used when no supported URL header is found,
+and the preview shows that warning before activation.
+
+## Manage Monitors
+
+The management page lists the selected project's monitors. A signed in user with
+`jobs:write` can:
+
+- edit monitor name, schedule, interval, extraction mode, and product URLs
+- run a monitor immediately
+- pause and resume a monitor
+- delete a monitor
+
+All state changing forms are CSRF protected and re-fetch the monitor through the
+session's account and project scope. Cross tenant IDs return `404`.
+
+Lifecycle actions are also appended to the selected project's
+`metadata.portal_audit_events` trail with an operation such as
+`portal_monitor_pause`, `portal_monitor_resume`, `portal_monitor_edited`, or
+`portal_monitor_delete`. Each entry carries the acting API key, owner, job ID,
+timestamp, and action metadata. Audit records are capped to the latest 500
+entries per project and do not consume customer API quota.
+
+## Alert Destinations
+
+The hosted portal exposes Slack, webhook, email, and stdout destinations.
+
+Slack and webhook URLs use the same outbound URL policy as the rest of
+CommerceLens. Email delivery uses the configured CommerceLens SMTP settings.
+The filesystem destination remains available to local configuration files but
+is intentionally not exposed through the hosted customer portal.
 
 ## Portal Views
 
