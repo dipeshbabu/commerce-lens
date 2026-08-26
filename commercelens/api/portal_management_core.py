@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 
 from fastapi import HTTPException, Request
 from fastapi.responses import HTMLResponse
+from pydantic import HttpUrl
 
 from commercelens.alerts.rules import (
     AlertCondition,
@@ -82,9 +83,11 @@ async def _form(request: Request) -> dict[str, str]:
             if disposition != "form-data":
                 continue
             name = part.get_param("name", header="content-disposition")
-            if not name:
+            if not isinstance(name, str) or not name:
                 continue
-            payload = part.get_payload(decode=True) or b""
+            payload = part.get_payload(decode=True)
+            if not isinstance(payload, bytes):
+                continue
             charset = part.get_content_charset() or "utf-8"
             result[name] = payload.decode(charset, errors="replace")
         return result
@@ -240,7 +243,7 @@ def _destination(form: dict[str, str]) -> AlertDestination | None:
     if destination_type in {AlertDestinationType.WEBHOOK, AlertDestinationType.SLACK}:
         if not value:
             raise ValueError("Enter the destination URL.")
-        return AlertDestination(type=destination_type, url=value)
+        return AlertDestination(type=destination_type, url=HttpUrl(value))
     if destination_type == AlertDestinationType.EMAIL:
         if not value:
             raise ValueError("Enter the alert email address.")
