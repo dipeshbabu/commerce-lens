@@ -35,7 +35,7 @@ jobs:
           commercelens run examples/monitor_config.json --out monitor_run.json
 
       - name: Upload monitor result
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: monitor-run
           path: |
