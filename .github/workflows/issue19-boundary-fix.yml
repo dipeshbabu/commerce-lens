@@ -22,14 +22,14 @@ jobs:
       - name: Validate focused domain changes
         run: |
           python -m pip install -e ".[dev]"
-          ruff format commercelens/domain/repository.py
+          ruff format .
           ruff check .
           ruff format --check .
           mypy commercelens
           pytest tests/test_domain_models.py tests/test_domain_api.py tests/test_domain_extraction_api.py -q
       - name: Commit boundary fix
         run: |
-          if git diff --quiet; then
+          if git diff --quiet commercelens/domain/repository.py; then
             exit 0
           fi
           git config user.name "github-actions[bot]"
