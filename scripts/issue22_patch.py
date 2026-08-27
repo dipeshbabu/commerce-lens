@@ -16,7 +16,7 @@ def replace_once(path: str, old: str, new: str) -> None:
 # Resolve the forward reference used by ProductComparison after all insight models exist.
 replace_once(
     "commercelens/domain/insights.py",
-    '''class ChangeFeedEntry(BaseModel):
+    """class ChangeFeedEntry(BaseModel):
     event: ChangeEventRecord
     product: ProductRecord | None = None
     offer: OfferRecord | None = None
@@ -32,8 +32,8 @@ replace_once(
     warnings: list[str] = Field(default_factory=list)
 
 
-def parse_datetime''',
-    '''class ChangeFeedEntry(BaseModel):
+def parse_datetime""",
+    """class ChangeFeedEntry(BaseModel):
     event: ChangeEventRecord
     product: ProductRecord | None = None
     offer: OfferRecord | None = None
@@ -52,13 +52,15 @@ def parse_datetime''',
 ProductComparison.model_rebuild()
 
 
-def parse_datetime''',
+def parse_datetime""",
 )
 
 # Customer insight route safety, selected exports, and a lighter product-index query path.
 path = Path("commercelens/api/customer_insights.py")
 text = path.read_text()
-text = text.replace("from urllib.parse import urlencode\n", "from urllib.parse import urlencode, urlsplit\n")
+text = text.replace(
+    "from urllib.parse import urlencode\n", "from urllib.parse import urlencode, urlsplit\n"
+)
 text = text.replace(
     "from fastapi import APIRouter, Depends, HTTPException, Request\n",
     "from fastapi import APIRouter, Depends, HTTPException, Query, Request\n",
@@ -72,15 +74,15 @@ text = text.replace(
     'account_id=context.key.account_id or "",\n',
 )
 
-price_anchor = '''def _price(amount: float | None, currency: str | None) -> str:
+price_anchor = """def _price(amount: float | None, currency: str | None) -> str:
     if amount is None:
         return "—"
     suffix = f" {esc(currency)}" if currency else ""
     return f"{esc(f'{amount:g}')}{suffix}"
 
 
-def _sparkline'''
-price_replacement = '''def _price(amount: float | None, currency: str | None) -> str:
+def _sparkline"""
+price_replacement = """def _price(amount: float | None, currency: str | None) -> str:
     if amount is None:
         return "—"
     suffix = f" {esc(currency)}" if currency else ""
@@ -94,7 +96,7 @@ def _external_offer(url: str) -> str:
     return f'<a href="{esc(url)}" rel="noreferrer">{esc(url)}</a>'
 
 
-def _sparkline'''
+def _sparkline"""
 if price_replacement not in text:
     if price_anchor not in text:
         raise RuntimeError("External offer helper anchor not found")
@@ -105,7 +107,7 @@ text = text.replace(
     "_external_offer(view.offer.url)",
 )
 
-old_products = '''    rows: list[list[object]] = []
+old_products = """    rows: list[list[object]] = []
     for product in products:
         comparison = build_product_comparison(
             repo,
@@ -136,8 +138,8 @@ old_products = '''    rows: list[list[object]] = []
                 esc(product.updated_at),
             ]
         )
-'''
-new_products = '''    matches = repo.list_product_matches(
+"""
+new_products = """    matches = repo.list_product_matches(
         account_id=context.key.account_id or "", project_id=selected.id, limit=2000
     )
     rows: list[list[object]] = []
@@ -179,17 +181,17 @@ new_products = '''    matches = repo.list_product_matches(
                 esc(product.updated_at),
             ]
         )
-'''
+"""
 if new_products not in text:
     if old_products not in text:
         raise RuntimeError("Product index optimization anchor not found")
     text = text.replace(old_products, new_products, 1)
 
-old_feed_table = '''    <section class="panel">
+old_feed_table = """    <section class="panel">
       {table(["Changed", "What happened", "Source", "Type", "Severity", "Before", "Now", "Confidence", "State", "Evidence"], _change_rows(entries))}
     </section>
-'''
-new_feed_table = '''    <form id="change-export-form" class="action-row" method="get" action="/portal/export/changes">
+"""
+new_feed_table = """    <form id="change-export-form" class="action-row" method="get" action="/portal/export/changes">
       <input type="hidden" name="project_id" value="{esc(selected.id)}">
       <input type="hidden" name="source_id" value="{esc(source_id)}">
       <input type="hidden" name="event_type" value="{esc(event_type)}">
@@ -201,13 +203,13 @@ new_feed_table = '''    <form id="change-export-form" class="action-row" method=
     <section class="panel">
       {table(["Select", "Changed", "What happened", "Source", "Type", "Severity", "Before", "Now", "Confidence", "State", "Evidence"], [[f'<input type="checkbox" name="change_id" value="{esc(entry.event.id)}" form="change-export-form" aria-label="Select change {esc(entry.event.id)}">', *row] for entry, row in zip(entries, _change_rows(entries))])}
     </section>
-'''
+"""
 if new_feed_table not in text:
     if old_feed_table not in text:
         raise RuntimeError("Selected change export table anchor not found")
     text = text.replace(old_feed_table, new_feed_table, 1)
 
-old_export_signature = '''def export_changes(
+old_export_signature = """def export_changes(
     request: Request,
     project_id: str | None = None,
     source_id: str | None = None,
@@ -217,8 +219,8 @@ old_export_signature = '''def export_changes(
     until: str | None = None,
     store: Any = Depends(get_job_store),
 ) -> Response:
-'''
-new_export_signature = '''def export_changes(
+"""
+new_export_signature = """def export_changes(
     request: Request,
     project_id: str | None = None,
     source_id: str | None = None,
@@ -229,21 +231,21 @@ new_export_signature = '''def export_changes(
     change_id: list[str] = Query(default=[]),
     store: Any = Depends(get_job_store),
 ) -> Response:
-'''
+"""
 if new_export_signature not in text:
     if old_export_signature not in text:
         raise RuntimeError("Change export signature anchor not found")
     text = text.replace(old_export_signature, new_export_signature, 1)
 
-old_entries = '''    entries = _feed(
+old_entries = """    entries = _feed(
         store,
         account_id=context.key.account_id or "",
         project_id=selected.id,
         filters=filters,
     )
     payload = {
-'''
-new_entries = '''    entries = _feed(
+"""
+new_entries = """    entries = _feed(
         store,
         account_id=context.key.account_id or "",
         project_id=selected.id,
@@ -253,7 +255,7 @@ new_entries = '''    entries = _feed(
         selected_ids = set(change_id)
         entries = [entry for entry in entries if entry.event.id in selected_ids]
     payload = {
-'''
+"""
 # Only replace the export occurrence by targeting the last occurrence before payload.
 export_pos = text.find("def export_changes(")
 if export_pos < 0:
@@ -275,15 +277,20 @@ if new_nav not in text:
     if old_nav not in text:
         raise RuntimeError("Portal navigation anchor not found")
     text = text.replace(old_nav, new_nav, 1)
-style_anchor = '    .notice.warning {{ color: #854d0e; border-color: #fde68a; background: #fffbeb; }}\n'
-style_new = style_anchor + '''    .badge {{ display: inline-block; border: 1px solid #cbd5e1; border-radius: 999px; padding: 2px 7px; font-size: 12px; font-weight: 600; }}
+style_anchor = (
+    "    .notice.warning {{ color: #854d0e; border-color: #fde68a; background: #fffbeb; }}\n"
+)
+style_new = (
+    style_anchor
+    + """    .badge {{ display: inline-block; border: 1px solid #cbd5e1; border-radius: 999px; padding: 2px 7px; font-size: 12px; font-weight: 600; }}
     .badge.current {{ color: #166534; background: #f0fdf4; border-color: #bbf7d0; }}
     .badge.stale {{ color: #854d0e; background: #fffbeb; border-color: #fde68a; }}
     .badge.partial {{ color: #991b1b; background: #fef2f2; border-color: #fecaca; }}
     .history-chart {{ margin: 0 0 16px; color: #334155; }}
     .history-chart svg {{ width: 100%; height: 160px; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; }}
     .insight-filter {{ margin-bottom: 14px; }}
-'''
+"""
+)
 if style_new not in text:
     if style_anchor not in text:
         raise RuntimeError("Portal style anchor not found")
@@ -293,7 +300,7 @@ presentation.write_text(text)
 # Document the new customer value views and exports.
 docs = Path("docs/customer_portal.md")
 text = docs.read_text()
-section = '''
+section = """
 
 ## Change Feed and Product Comparisons
 
@@ -321,7 +328,7 @@ Portal JSON exports use the same aggregation and tenant filters as the visible p
 The change export accepts the visible filters and optional repeated `change_id` parameters for selected rows. Export responses remain `no-store` and use the browser session rather than putting API keys in URLs.
 
 Staleness defaults to 24 hours for manual or unbound observations. Interval monitors use twice their configured interval with a one-hour minimum. Set `COMMERCELENS_STALE_AFTER_MINUTES` to change the fallback threshold.
-'''
+"""
 if "## Change Feed and Product Comparisons" not in text:
     docs.write_text(text.rstrip() + section + "\n")
 

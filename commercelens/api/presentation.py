@@ -126,6 +126,13 @@ def portal_shell(title: str, content: str, csrf_token: str = "") -> str:
     .notice.error {{ color: #991b1b; border-color: #fecaca; background: #fef2f2; }}
     .notice.success {{ color: #166534; border-color: #bbf7d0; background: #f0fdf4; }}
     .notice.warning {{ color: #854d0e; border-color: #fde68a; background: #fffbeb; }}
+    .badge {{ display: inline-block; border: 1px solid #cbd5e1; border-radius: 999px; padding: 2px 7px; font-size: 12px; font-weight: 600; }}
+    .badge.current {{ color: #166534; background: #f0fdf4; border-color: #bbf7d0; }}
+    .badge.stale {{ color: #854d0e; background: #fffbeb; border-color: #fde68a; }}
+    .badge.partial {{ color: #991b1b; background: #fef2f2; border-color: #fecaca; }}
+    .history-chart {{ margin: 0 0 16px; color: #334155; }}
+    .history-chart svg {{ width: 100%; height: 160px; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; }}
+    .insight-filter {{ margin-bottom: 14px; }}
     @media (max-width: 900px) {{
       .grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
       main {{ padding: 16px; }}
@@ -143,7 +150,7 @@ def portal_shell(title: str, content: str, csrf_token: str = "") -> str:
 <body>
   <header>
     <div><strong>CommerceLens</strong> <span class="muted">customer portal</span></div>
-    <nav><a href="/portal">Overview</a><a href="/portal/manage">Manage monitors</a><a href="/docs">API Docs</a>{session_actions}</nav>
+    <nav><a href="/portal">Overview</a><a href="/portal/changes">Changes</a><a href="/portal/products">Products</a><a href="/portal/manage">Manage monitors</a><a href="/docs">API Docs</a>{session_actions}</nav>
   </header>
   <main>{content}</main>
 </body>

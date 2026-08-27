@@ -7,7 +7,11 @@ from fastapi.testclient import TestClient
 from commercelens.alerts.config import MonitorConfig, MonitorTarget
 from commercelens.api.main import app
 from commercelens.api.portal_auth import CSRF_COOKIE_NAME, LOGIN_CSRF_COOKIE_NAME
-from commercelens.domain.insights import ChangeFeedFilters, build_change_feed, build_product_comparison
+from commercelens.domain.insights import (
+    ChangeFeedFilters,
+    build_change_feed,
+    build_product_comparison,
+)
 from commercelens.domain.models import ChangeEventRecord, ProductMatchRecord, ProductMatchStatus
 from commercelens.domain.repository import domain_repository_for_store
 from commercelens.domain.service import ingest_product_extraction
@@ -343,9 +347,7 @@ def test_customer_insight_api_and_portal_preserve_tenant_scope(monkeypatch, tmp_
 
     client = TestClient(app, base_url="https://testserver")
     _login(client, other_key.token)
-    hidden = client.get(
-        f"/portal/products/{first.product.id}", params={"project_id": project.id}
-    )
+    hidden = client.get(f"/portal/products/{first.product.id}", params={"project_id": project.id})
     assert hidden.status_code == 404
 
     assert repo.list_change_events(account_id=account.id, project_id=project.id)

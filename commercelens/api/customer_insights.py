@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
 
 from commercelens.api.auth import get_job_store, require_api_key
@@ -19,6 +19,7 @@ from commercelens.domain.insights import (
     ProductComparison,
     build_change_feed,
     build_product_comparison,
+    observation_is_stale,
     parse_datetime,
 )
 from commercelens.domain.repository import domain_repository_for_store
@@ -161,6 +162,13 @@ def _price(amount: float | None, currency: str | None) -> str:
     return f"{esc(f'{amount:g}')}{suffix}"
 
 
+def _external_offer(url: str) -> str:
+    parsed = urlsplit(url)
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+        return f"<code>{esc(url)}</code>"
+    return f'<a href="{esc(url)}" rel="noreferrer">{esc(url)}</a>'
+
+
 def _sparkline(points: list[Any]) -> str:
     priced = [point for point in reversed(points) if point.amount is not None]
     if len(priced) < 2:
@@ -178,7 +186,7 @@ def _sparkline(points: list[Any]) -> str:
     return f"""
     <figure class="history-chart">
       <svg viewBox="0 0 640 160" role="img" aria-label="{esc(label)}" preserveAspectRatio="none">
-        <polyline points="{' '.join(coords)}" fill="none" stroke="currentColor" stroke-width="3" vector-effect="non-scaling-stroke"></polyline>
+        <polyline points="{" ".join(coords)}" fill="none" stroke="currentColor" stroke-width="3" vector-effect="non-scaling-stroke"></polyline>
       </svg>
       <figcaption class="muted">{esc(label)} across {len(values)} observations.</figcaption>
     </figure>
@@ -198,7 +206,9 @@ def _change_rows(entries: list[ChangeFeedEntry]) -> list[list[object]]:
             links.append(f'<a href="/portal/runs/{esc(event.run_id)}">Run</a>')
         details = ""
         if entry.warnings:
-            details = '<div class="help">' + " ".join(esc(item) for item in entry.warnings) + "</div>"
+            details = (
+                '<div class="help">' + " ".join(esc(item) for item in entry.warnings) + "</div>"
+            )
         rows.append(
             [
                 esc(event.changed_at),
@@ -303,7 +313,7 @@ def portal_changes(
     repo = domain_repository_for_store(store)
     projects = _available_projects(store, context)
     sources = repo.list_sources(
-        account_id=context.key.account_id,
+        account_id=context.key.account_id or "",
         project_id=selected.id,
         limit=200,
     )
@@ -371,8 +381,17 @@ def portal_changes(
       <button class="primary" type="submit">Apply filters</button>
     </form>
     {empty}
+    <form id="change-export-form" class="action-row" method="get" action="/portal/export/changes">
+      <input type="hidden" name="project_id" value="{esc(selected.id)}">
+      <input type="hidden" name="source_id" value="{esc(source_id)}">
+      <input type="hidden" name="event_type" value="{esc(event_type)}">
+      <input type="hidden" name="severity" value="{esc(severity)}">
+      <input type="hidden" name="since" value="{esc(since)}">
+      <input type="hidden" name="until" value="{esc(until)}">
+      <button type="submit">Export selected changes</button>
+    </form>
     <section class="panel">
-      {table(["Changed", "What happened", "Source", "Type", "Severity", "Before", "Now", "Confidence", "State", "Evidence"], _change_rows(entries))}
+      {table(["Select", "Changed", "What happened", "Source", "Type", "Severity", "Before", "Now", "Confidence", "State", "Evidence"], [[f'<input type="checkbox" name="change_id" value="{esc(entry.event.id)}" form="change-export-form" aria-label="Select change {esc(entry.event.id)}">', *row] for entry, row in zip(entries, _change_rows(entries))])}
     </section>
     """
     return _page("Changes", content, context)
@@ -395,37 +414,46 @@ def portal_products(
     projects = _available_projects(store, context)
     repo = domain_repository_for_store(store)
     products = repo.list_products(
-        account_id=context.key.account_id,
+        account_id=context.key.account_id or "",
         project_id=selected.id,
         limit=500,
     )
+    matches = repo.list_product_matches(
+        account_id=context.key.account_id or "", project_id=selected.id, limit=2000
+    )
     rows: list[list[object]] = []
     for product in products:
-        comparison = build_product_comparison(
-            repo,
+        direct_offers = repo.list_offers(
             account_id=context.key.account_id or "",
             project_id=selected.id,
             product_id=product.id,
-            job_store=store,
-            history_limit=1,
-            change_limit=1,
+            limit=500,
         )
-        offer_count = 0
-        equivalent_count = 0
-        state = ""
-        if comparison:
-            offer_count = len(comparison.offers) + sum(
-                len(item.offers) for item in comparison.equivalent_products
+        active_matches = [
+            match
+            for match in matches
+            if match.status.value != "rejected"
+            and product.id in {match.left_product_id, match.right_product_id}
+        ]
+        stale_flags: list[bool] = []
+        partial = not direct_offers
+        for offer in direct_offers:
+            latest = repo.latest_observation(
+                offer.id,
+                account_id=context.key.account_id or "",
+                project_id=selected.id,
             )
-            equivalent_count = len(comparison.equivalent_products)
-            state = _state_badges(stale=comparison.stale, partial=comparison.partial)
+            stale, _ = observation_is_stale(repo, latest)
+            stale_flags.append(stale)
+            partial = partial or latest is None
+        state = _state_badges(stale=(all(stale_flags) if stale_flags else True), partial=partial)
         rows.append(
             [
                 f'<a href="/portal/products/{esc(product.id)}?project_id={esc(selected.id)}">{esc(product.name or product.id)}</a>',
                 esc(product.brand),
                 esc(product.sku),
-                esc(offer_count),
-                esc(equivalent_count),
+                esc(len(direct_offers)),
+                esc(len(active_matches)),
                 state,
                 esc(product.updated_at),
             ]
@@ -470,15 +498,17 @@ def portal_product_comparison(
         match = equivalent.match if equivalent else None
         relation = "direct"
         if equivalent and match:
-            relation = (
-                f"{esc(match.status.value)} match · {esc(match.confidence)}"
-                + (f" · {esc(match.method)}" if match.method else "")
+            relation = f"{esc(match.status.value)} match · {esc(match.confidence)}" + (
+                f" · {esc(match.method)}" if match.method else ""
             )
         offer_rows.append(
             [
                 esc(view.source.name if view.source else view.offer.source_id),
-                f'<a href="{esc(view.offer.url)}" rel="noreferrer">{esc(view.offer.url)}</a>',
-                _price(observation.amount if observation else view.offer.current_amount, observation.currency if observation else view.offer.current_currency),
+                _external_offer(view.offer.url),
+                _price(
+                    observation.amount if observation else view.offer.current_amount,
+                    observation.currency if observation else view.offer.current_currency,
+                ),
                 esc(observation.availability if observation else view.offer.current_availability),
                 esc(observation.captured_at if observation else view.offer.last_observed_at),
                 esc(observation.confidence if observation else None),
@@ -511,12 +541,14 @@ def portal_product_comparison(
     if comparison.stale:
         notices += '<section class="notice warning" role="status"><strong>Stale comparison.</strong> All available offers are past their expected observation window.</section>'
     if comparison.partial:
-        notices += '<section class="notice error" role="status"><strong>Partial data.</strong> ' + " ".join(
-            esc(item) for item in comparison.warnings
-        ) + "</section>"
+        notices += (
+            '<section class="notice error" role="status"><strong>Partial data.</strong> '
+            + " ".join(esc(item) for item in comparison.warnings)
+            + "</section>"
+        )
     if not all_offers:
         notices += '<section class="notice warning" role="status"><strong>No offers yet.</strong> This product exists but has no observed store offers.</section>'
-    export_url = f"/portal/export/products/{esc(product.id)}/comparison?project_id={esc(selected.id)}"
+    export_url = f"/portal/export/products/{esc(comparison.product.id)}/comparison?project_id={esc(selected.id)}"
     content = f"""
     <div class="page-heading">
       <div><h1>{esc(comparison.product.name or comparison.product.id)}</h1><p class="muted">{esc(comparison.product.brand)} · {esc(comparison.product.sku or "no SKU")}</p></div>
@@ -555,19 +587,19 @@ def portal_observation(
     repo = domain_repository_for_store(store)
     observation = repo.get_observation(
         observation_id,
-        account_id=context.key.account_id,
+        account_id=context.key.account_id or "",
         project_id=selected.id,
     )
     if not observation:
         raise HTTPException(status_code=404, detail="Observation not found.")
     source = repo.get_source(
         observation.source_id,
-        account_id=context.key.account_id,
+        account_id=context.key.account_id or "",
         project_id=selected.id,
     )
     product = repo.get_product(
         observation.product_id,
-        account_id=context.key.account_id,
+        account_id=context.key.account_id or "",
         project_id=selected.id,
     )
     run_link = (
@@ -577,7 +609,10 @@ def portal_observation(
     )
     rows = [
         ["Captured", esc(observation.captured_at)],
-        ["Product", f'<a href="/portal/products/{esc(observation.product_id)}?project_id={esc(selected.id)}">{esc(product.name if product else observation.product_id)}</a>'],
+        [
+            "Product",
+            f'<a href="/portal/products/{esc(observation.product_id)}?project_id={esc(selected.id)}">{esc(product.name if product else observation.product_id)}</a>',
+        ],
         ["Source", esc(source.name if source else observation.source_id)],
         ["Offer", esc(observation.source_url or observation.offer_id)],
         ["Price", _price(observation.amount, observation.currency)],
@@ -585,7 +620,10 @@ def portal_observation(
         ["Extraction confidence", esc(observation.confidence)],
         ["Extraction", esc(observation.extraction_id)],
         ["Monitor run", run_link],
-        ["Provenance", f"<pre>{esc(json.dumps(observation.provenance, indent=2, sort_keys=True))}</pre>"],
+        [
+            "Provenance",
+            f"<pre>{esc(json.dumps(observation.provenance, indent=2, sort_keys=True))}</pre>",
+        ],
     ]
     return _page(
         "Observation",
@@ -603,6 +641,7 @@ def export_changes(
     severity: str | None = None,
     since: str | None = None,
     until: str | None = None,
+    change_id: list[str] = Query(default=[]),
     store: Any = Depends(get_job_store),
 ) -> Response:
     context = require_portal_session(request, store)
@@ -623,6 +662,9 @@ def export_changes(
         project_id=selected.id,
         filters=filters,
     )
+    if change_id:
+        selected_ids = set(change_id)
+        entries = [entry for entry in entries if entry.event.id in selected_ids]
     payload = {
         "account_id": context.key.account_id,
         "project_id": selected.id,

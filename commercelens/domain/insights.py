@@ -80,6 +80,9 @@ class ChangeFeedEntry(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+ProductComparison.model_rebuild()
+
+
 def parse_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -238,9 +241,7 @@ def build_change_feed(
         if previous is None:
             warnings.append("Previous observation is unavailable.")
         if event.run_id and job_store is not None:
-            run = job_store.get_run(
-                event.run_id, account_id=account_id, project_id=project_id
-            )
+            run = job_store.get_run(event.run_id, account_id=account_id, project_id=project_id)
             if run is None:
                 warnings.append("Responsible monitor run is unavailable.")
         monitor_name = None
@@ -365,9 +366,7 @@ def build_product_comparison(
         if product.id not in {match.left_product_id, match.right_product_id}:
             continue
         other_id = (
-            match.right_product_id
-            if match.left_product_id == product.id
-            else match.left_product_id
+            match.right_product_id if match.left_product_id == product.id else match.left_product_id
         )
         other = repo.get_product(other_id, account_id=account_id, project_id=project_id)
         if other is None:
@@ -405,14 +404,16 @@ def build_product_comparison(
         now=now,
     )
     related_ids = {product.id, *(item.product.id for item in equivalents)}
-    recent_changes = [
-        entry for entry in change_entries if entry.event.product_id in related_ids
-    ][:change_limit]
+    recent_changes = [entry for entry in change_entries if entry.event.product_id in related_ids][
+        :change_limit
+    ]
 
     all_offer_views = offer_views + [offer for item in equivalents for offer in item.offers]
     history = [point for view in all_offer_views for point in view.history]
     history.sort(
-        key=lambda item: parse_datetime(item.captured_at) or datetime.min.replace(tzinfo=timezone.utc),
+        key=lambda item: (
+            parse_datetime(item.captured_at) or datetime.min.replace(tzinfo=timezone.utc)
+        ),
         reverse=True,
     )
     warnings: list[str] = []

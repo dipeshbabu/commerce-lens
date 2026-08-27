@@ -165,3 +165,31 @@ Authenticated portal users can download tenant scoped JSON from clean paths:
 
 Export responses are marked `no-store`. They use the browser session cookie and
 never carry an API key in the URL.
+
+## Change Feed and Product Comparisons
+
+The signed in portal exposes business changes directly instead of requiring customers to inspect raw run payloads.
+
+Use `/portal/changes` for a chronological feed with project, source, event type, severity, and time filters. Each row summarizes the change and links to the responsible observation and monitor run when available. Stale and partial evidence is surfaced explicitly rather than silently hidden.
+
+Use `/portal/products` to browse monitored product identities and `/portal/products/{product_id}` to compare current offers across stores. The comparison includes current price, availability, latest observation, extraction confidence, explicit product-match confidence and provenance, recent changes, and price history data. Confirmed and proposed matches are shown separately from the direct offers owned by the product; rejected matches are excluded.
+
+Machine readable insight endpoints are available at:
+
+```text
+/v1/change-feed
+/v1/products/{product_id}/comparison
+/v1/products/{product_id}/history
+```
+
+Portal JSON exports use the same aggregation and tenant filters as the visible pages:
+
+```text
+/portal/export/changes
+/portal/export/products/{product_id}/comparison
+```
+
+The change export accepts the visible filters and optional repeated `change_id` parameters for selected rows. Export responses remain `no-store` and use the browser session rather than putting API keys in URLs.
+
+Staleness defaults to 24 hours for manual or unbound observations. Interval monitors use twice their configured interval with a one-hour minimum. Set `COMMERCELENS_STALE_AFTER_MINUTES` to change the fallback threshold.
+
