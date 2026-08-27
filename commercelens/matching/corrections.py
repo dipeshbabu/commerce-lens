@@ -13,6 +13,7 @@ from commercelens.domain.models import (
 
 
 CorrectionAction = Literal["confirm", "reject", "replace"]
+MatchDecision = Literal["confirm", "reject"]
 
 
 class MatchCorrectionResult(BaseModel):
@@ -26,7 +27,7 @@ def correct_product_match(
     account_id: str,
     project_id: str,
     match_id: str,
-    action: Literal["confirm", "reject"],
+    action: MatchDecision,
     actor: str | None,
     note: str | None = None,
 ) -> ProductMatchRecord:
@@ -61,12 +62,11 @@ def replace_product_match(
     ) is None:
         raise ValueError("Replacement product not found.")
 
-    previous_status = current.status
     _append_correction(
         current,
         action="replace",
         actor=actor,
-        previous_status=previous_status,
+        previous_status=current.status,
         note=note,
         replacement_product_id=replacement_product_id,
     )
@@ -92,22 +92,22 @@ def replace_product_match(
             left_product_id=left_product_id,
             right_product_id=right_product_id,
             confidence=1.0,
-            status=ProductMatchStatus.confirmed,
+            status=ProductMatchStatus.proposed,
             method="customer_correction",
             metadata={},
         )
-    else:
-        replacement.status = ProductMatchStatus.confirmed
-        replacement.confidence = 1.0
-        replacement.method = "customer_correction"
+    previous_replacement_status = replacement.status
     _append_correction(
         replacement,
         action="confirm",
         actor=actor,
-        previous_status=replacement.status,
+        previous_status=previous_replacement_status,
         note=note,
         replacement_for=match_id,
     )
+    replacement.status = ProductMatchStatus.confirmed
+    replacement.confidence = 1.0
+    replacement.method = "customer_correction"
     replacement = repo.save_product_match(replacement)
     return MatchCorrectionResult(updated=current, replacement=replacement)
 
@@ -141,7 +141,8 @@ def _append_correction(
 
 
 def _canonical_pair(left_product_id: str, right_product_id: str) -> tuple[str, str]:
-    return tuple(sorted((left_product_id, right_product_id)))  # type: ignore[return-value]
+    first, second = sorted((left_product_id, right_product_id))
+    return first, second
 
 
 def _match_id(account_id: str, project_id: str, left: str, right: str) -> str:
