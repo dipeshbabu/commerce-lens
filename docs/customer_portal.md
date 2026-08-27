@@ -185,7 +185,7 @@ Machine readable insight endpoints are available at:
 Portal JSON exports use the same aggregation and tenant filters as the visible pages:
 
 ```text
-/portal/export/changes
+/portal/insights/export/changes
 /portal/export/products/{product_id}/comparison
 ```
 

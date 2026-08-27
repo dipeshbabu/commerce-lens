@@ -368,7 +368,7 @@ def portal_changes(
     content = f"""
     <div class="page-heading">
       <div><h1>Change feed</h1><p class="muted">Business changes across monitored offers, newest first.</p></div>
-      <a class="button-link" href="/portal/export/changes{export_query}">Export JSON</a>
+      <a class="button-link" href="/portal/insights/export/changes{export_query}">Export JSON</a>
     </div>
     {_project_selector(projects, selected.id, "/portal/changes")}
     <form class="form-grid insight-filter" method="get" action="/portal/changes" aria-label="Change feed filters">
@@ -381,7 +381,7 @@ def portal_changes(
       <button class="primary" type="submit">Apply filters</button>
     </form>
     {empty}
-    <form id="change-export-form" class="action-row" method="get" action="/portal/export/changes">
+    <form id="change-export-form" class="action-row" method="get" action="/portal/insights/export/changes">
       <input type="hidden" name="project_id" value="{esc(selected.id)}">
       <input type="hidden" name="source_id" value="{esc(source_id)}">
       <input type="hidden" name="event_type" value="{esc(event_type)}">
@@ -632,7 +632,7 @@ def portal_observation(
     )
 
 
-@router.get("/portal/export/changes")
+@router.get("/portal/insights/export/changes")
 def export_changes(
     request: Request,
     project_id: str | None = None,

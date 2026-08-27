@@ -332,7 +332,7 @@ def test_customer_insight_api_and_portal_preserve_tenant_scope(monkeypatch, tmp_
     assert "Price history" in product_page.text
 
     changes_export = client.get(
-        "/portal/export/changes",
+        "/portal/insights/export/changes",
         params={"event_type": "price_drop", "source_id": changed.source.id},
     )
     assert changes_export.status_code == 200
