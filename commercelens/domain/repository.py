@@ -17,7 +17,6 @@ from commercelens.domain.models import (
     SourceRecord,
     utc_now_iso,
 )
-from commercelens.jobs.migrations import run_postgres_migrations
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -681,6 +680,8 @@ class PostgresDomainRepository:
         self.dsn = dsn
         self._psycopg = psycopg
         self._dict_row = dict_row
+        from commercelens.jobs.migrations import run_postgres_migrations
+
         with self._connect() as conn:
             run_postgres_migrations(conn)
 
@@ -1126,7 +1127,10 @@ def domain_repository_for_store(store: Any) -> CommerceRepository:
     if dsn:
         return PostgresDomainRepository(str(dsn))
     path = getattr(store, "path", None)
-    return SQLiteDomainRepository(path or os.getenv("COMMERCELENS_JOBS_DB", "commercelens_jobs.db"))
+    sqlite_path = (
+        str(path) if path is not None else os.getenv("COMMERCELENS_JOBS_DB", "commercelens_jobs.db")
+    )
+    return SQLiteDomainRepository(sqlite_path)
 
 
 def domain_repository_from_env() -> CommerceRepository:
