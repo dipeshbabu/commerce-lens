@@ -16,6 +16,8 @@ from commercelens.api.quota import require_scope
 from commercelens.domain.insights import (
     ChangeFeedEntry,
     ChangeFeedFilters,
+    EquivalentProduct,
+    OfferComparison,
     ProductComparison,
     build_change_feed,
     build_product_comparison,
@@ -489,15 +491,17 @@ def portal_product_comparison(
         project_id=selected.id,
         product_id=product_id,
     )
-    all_offers = [(None, item) for item in comparison.offers]
-    for equivalent in comparison.equivalent_products:
-        all_offers.extend((equivalent, item) for item in equivalent.offers)
+    all_offers: list[tuple[EquivalentProduct | None, OfferComparison]] = [
+        (None, item) for item in comparison.offers
+    ]
+    for equivalent_product in comparison.equivalent_products:
+        all_offers.extend((equivalent_product, item) for item in equivalent_product.offers)
     offer_rows: list[list[object]] = []
-    for equivalent, view in all_offers:
+    for related_product, view in all_offers:
         observation = view.latest_observation
-        match = equivalent.match if equivalent else None
+        match = related_product.match if related_product else None
         relation = "direct"
-        if equivalent and match:
+        if related_product and match:
             relation = f"{esc(match.status.value)} match · {esc(match.confidence)}" + (
                 f" · {esc(match.method)}" if match.method else ""
             )
