@@ -9,6 +9,9 @@ from pydantic import BaseModel, Field
 from commercelens.connectors.datasets import ProductRecord
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
+DEFAULT_MATCH_THRESHOLD = 0.72
+_VARIANT_KEYS = ("model", "storage", "memory", "capacity", "size", "color", "gender", "variant")
+_BUNDLE_KEYS = ("bundle_quantity", "bundle")
 
 
 class ProductMatch(BaseModel):
@@ -30,6 +33,28 @@ def normalize_text(value: str | None) -> str:
 
 def token_set(value: str | None) -> set[str]:
     return set(normalize_text(value).split())
+
+
+def _metadata_value(record: ProductRecord, key: str) -> str:
+    value = record.metadata.get(key)
+    if value is None:
+        return ""
+    return normalize_text(str(value))
+
+
+def _explicit_mismatches(left: ProductRecord, right: ProductRecord) -> list[str]:
+    mismatches: list[str] = []
+    for key in _VARIANT_KEYS:
+        left_value = _metadata_value(left, key)
+        right_value = _metadata_value(right, key)
+        if left_value and right_value and left_value != right_value:
+            mismatches.append(f"variant_mismatch:{key}")
+    for key in _BUNDLE_KEYS:
+        left_value = _metadata_value(left, key)
+        right_value = _metadata_value(right, key)
+        if left_value and right_value and left_value != right_value:
+            mismatches.append(f"bundle_mismatch:{key}")
+    return mismatches
 
 
 def product_similarity(left: ProductRecord, right: ProductRecord) -> tuple[float, list[str]]:
@@ -54,6 +79,7 @@ def product_similarity(left: ProductRecord, right: ProductRecord) -> tuple[float
 
     left_brand = normalize_text(left.brand)
     right_brand = normalize_text(right.brand)
+    brand_mismatch = bool(left_brand and right_brand and left_brand != right_brand)
     if left_brand and right_brand:
         if left_brand == right_brand:
             score += 0.15
@@ -81,13 +107,28 @@ def product_similarity(left: ProductRecord, right: ProductRecord) -> tuple[float
         score += 0.02
         reasons.append("same_domain")
 
-    return max(0.0, min(1.0, score)), reasons
+    mismatches = _explicit_mismatches(left, right)
+    reasons.extend(mismatches)
+    score = max(0.0, min(1.0, score))
+
+    # Explicit structured attributes are stronger evidence than fuzzy title similarity.
+    # A variant, bundle, or brand conflict must not cross the default match threshold.
+    if any(reason.startswith("bundle_mismatch:") for reason in mismatches):
+        score = min(score, 0.40)
+    elif any(reason.startswith("variant_mismatch:model") for reason in mismatches):
+        score = min(score, 0.45)
+    elif mismatches:
+        score = min(score, 0.55)
+    if brand_mismatch:
+        score = min(score, 0.50)
+
+    return score, reasons
 
 
 def match_products(
     left_records: list[ProductRecord],
     right_records: list[ProductRecord],
-    threshold: float = 0.72,
+    threshold: float = DEFAULT_MATCH_THRESHOLD,
     top_k: int = 1,
 ) -> ProductMatchResult:
     matches: list[ProductMatch] = []
