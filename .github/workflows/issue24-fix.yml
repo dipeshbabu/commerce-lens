@@ -1,0 +1,149 @@
+name: Issue 24 fix and validation
+
+on:
+  push:
+    branches: [issue-24-matching-evaluation]
+
+permissions:
+  contents: write
+
+jobs:
+  fix-and-validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: issue-24-matching-evaluation
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Apply evidence-selected threshold and portal compatibility fixes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace(path_name: str, old: str, new: str, count: int = 1) -> None:
+              path = Path(path_name)
+              text = path.read_text()
+              if old not in text:
+                  raise SystemExit(f"anchor not found in {path_name}: {old!r}")
+              path.write_text(text.replace(old, new, count))
+
+          replace(
+              "commercelens/matching/products.py",
+              "DEFAULT_MATCH_THRESHOLD = 0.72",
+              "DEFAULT_MATCH_THRESHOLD = 0.65",
+          )
+          replace(
+              "commercelens/matching/identity.py",
+              "from commercelens.matching.products import normalize_text, product_similarity",
+              "from commercelens.matching.products import (\n    DEFAULT_MATCH_THRESHOLD,\n    normalize_text,\n    product_similarity,\n)",
+          )
+          replace(
+              "commercelens/matching/identity.py",
+              "    threshold: float = 0.72,",
+              "    threshold: float = DEFAULT_MATCH_THRESHOLD,",
+          )
+          replace(
+              "commercelens/schemas/connectors.py",
+              "from commercelens.connectors.datasets import ProductRecord\n",
+              "from commercelens.connectors.datasets import ProductRecord\nfrom commercelens.matching.products import DEFAULT_MATCH_THRESHOLD\n",
+          )
+          path = Path("commercelens/schemas/connectors.py")
+          text = path.read_text()
+          if text.count("threshold: float = 0.72") != 2:
+              raise SystemExit("expected two connector threshold defaults")
+          path.write_text(text.replace("threshold: float = 0.72", "threshold: float = DEFAULT_MATCH_THRESHOLD"))
+
+          replace(
+              "commercelens/cli/main.py",
+              "from commercelens.matching.products import match_products",
+              "from commercelens.matching.products import DEFAULT_MATCH_THRESHOLD, match_products",
+          )
+          path = Path("commercelens/cli/main.py")
+          text = path.read_text()
+          if text.count('typer.Option(0.72, "--threshold")') != 2:
+              raise SystemExit("expected two CLI threshold defaults")
+          path.write_text(
+              text.replace(
+                  'typer.Option(0.72, "--threshold")',
+                  'typer.Option(DEFAULT_MATCH_THRESHOLD, "--threshold")',
+              )
+          )
+
+          replace(
+              "commercelens/api/matching_corrections.py",
+              "from commercelens.matching.corrections import correct_product_match, replace_product_match",
+              "from commercelens.matching.corrections import (\n    MatchDecision,\n    correct_product_match,\n    replace_product_match,\n)",
+          )
+          replace(
+              "commercelens/api/matching_corrections.py",
+              "    action: str,",
+              "    action: MatchDecision,",
+          )
+          replace(
+              "commercelens/api/matching_corrections.py",
+              "            action=action,  # type: ignore[arg-type]",
+              "            action=action,",
+          )
+          path = Path("commercelens/api/matching_corrections.py")
+          text = path.read_text()
+          if "match:write" not in text:
+              raise SystemExit("portal match scope anchor not found")
+          path.write_text(text.replace("match:write", "jobs:write"))
+
+          replace(
+              "commercelens/api/presentation.py",
+              '<nav><a href="/portal">Overview</a><a href="/portal/changes">Changes</a><a href="/portal/products">Products</a><a href="/portal/manage">Manage monitors</a><a href="/docs">API Docs</a>{session_actions}</nav>',
+              '<nav><a href="/portal">Overview</a><a href="/portal/changes">Changes</a><a href="/portal/products">Products</a><a href="/portal/matches">Matches</a><a href="/portal/manage">Manage monitors</a><a href="/docs">API Docs</a>{session_actions}</nav>',
+          )
+
+          replace(
+              "docs/product_matching.md",
+              "A key with `match:write` can:",
+              "A key with `jobs:write` can:",
+          )
+
+          path = Path("tests/test_matching_evaluation.py")
+          text = path.read_text()
+          anchor = "    assert report.negative_count == 19\n"
+          if anchor not in text:
+              raise SystemExit("matching evaluation assertion anchor not found")
+          path.write_text(
+              text.replace(
+                  anchor,
+                  anchor + "    assert report.selected_threshold == DEFAULT_MATCH_THRESHOLD\n",
+                  1,
+              )
+          )
+          PY
+
+      - name: Remove temporary diagnostics and validator
+        run: |
+          rm -f .github/workflows/issue24-diagnostics.yml
+          rm -f .github/workflows/issue24-fix.yml
+
+      - name: Install validation dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Format
+        run: ruff format .
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Type check
+        run: mypy commercelens
+
+      - name: Run complete test suite
+        run: pytest -q
+
+      - name: Commit only verified changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Complete labeled product matching workflow"
+          git push origin HEAD:issue-24-matching-evaluation
