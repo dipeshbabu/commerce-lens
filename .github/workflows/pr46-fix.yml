@@ -29,48 +29,33 @@ jobs:
 
           benchmarks = Path("commercelens/quality/benchmarks.py")
           text = benchmarks.read_text()
-          old = '''    started = perf_counter()
-          if expectation.kind == "product":
-              extracted_model = extract_product_from_html(html, url=expectation.source_url)
-          else:
-              extracted_model = extract_listing_from_html(html, url=expectation.source_url)
-          latency_ms = (perf_counter() - started) * 1000
-          extracted = extracted_model.model_dump(mode="json")
-          '''
-          new = '''    started = perf_counter()
-          if expectation.kind == "product":
-              extracted = extract_product_from_html(
-                  html, url=expectation.source_url
-              ).model_dump(mode="json")
-          else:
-              extracted = extract_listing_from_html(
-                  html, url=expectation.source_url
-              ).model_dump(mode="json")
-          latency_ms = (perf_counter() - started) * 1000
-          '''
-          if old not in text:
-              raise SystemExit("benchmark extraction block not found")
-          text = text.replace(old, new, 1)
-          old = '''        for item in raw:
-              case = BenchmarkManifestCase.model_validate(item)
-              expectations[case.name] = case.fields
-          '''
-          new = '''        for item in raw:
-              manifest_case = BenchmarkManifestCase.model_validate(item)
-              expectations[manifest_case.name] = manifest_case.fields
-          '''
-          if old not in text:
-              raise SystemExit("benchmark manifest block not found")
-          benchmarks.write_text(text.replace(old, new, 1))
+          replacements = [
+              (
+                  '        extracted_model = extract_product_from_html(html, url=expectation.source_url)\n',
+                  '        extracted = extract_product_from_html(html, url=expectation.source_url).model_dump(mode="json")\n',
+              ),
+              (
+                  '        extracted_model = extract_listing_from_html(html, url=expectation.source_url)\n',
+                  '        extracted = extract_listing_from_html(html, url=expectation.source_url).model_dump(mode="json")\n',
+              ),
+              ('    extracted = extracted_model.model_dump(mode="json")\n', ''),
+              (
+                  '            case = BenchmarkManifestCase.model_validate(item)\n            expectations[case.name] = case.fields\n',
+                  '            manifest_case = BenchmarkManifestCase.model_validate(item)\n            expectations[manifest_case.name] = manifest_case.fields\n',
+              ),
+          ]
+          for old, new in replacements:
+              if old not in text:
+                  raise SystemExit(f"benchmark patch anchor not found: {old!r}")
+              text = text.replace(old, new, 1)
+          benchmarks.write_text(text)
 
           price = Path("commercelens/extractors/price.py")
           text = price.read_text()
-          old = '''    r"(?P<amount>[0-9]{1,3}(?:,[0-9]{3})*(?:\\.[0-9]{1,2})?|[0-9]+(?:\\.[0-9]{1,2})?)",
-          '''
-          new = '''    r"(?P<amount>(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\\.[0-9]{1,2})?)",
-          '''
+          old = '    r"(?P<amount>[0-9]{1,3}(?:,[0-9]{3})*(?:\\.[0-9]{1,2})?|[0-9]+(?:\\.[0-9]{1,2})?)",\n'
+          new = '    r"(?P<amount>(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\\.[0-9]{1,2})?)",\n'
           if old not in text:
-              raise SystemExit("price regex block not found")
+              raise SystemExit("price regex anchor not found")
           price.write_text(text.replace(old, new, 1))
 
           availability = Path("commercelens/extractors/availability.py")
@@ -81,13 +66,10 @@ jobs:
                   "from __future__ import annotations\n\nimport re\n\n",
                   1,
               )
-          old = '''    text = " ".join(raw.lower().split())
-          '''
-          new = '''    separated = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", raw)
-              text = " ".join(separated.lower().split())
-          '''
+          old = '    text = " ".join(raw.lower().split())\n'
+          new = '    separated = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", raw)\n    text = " ".join(separated.lower().split())\n'
           if old not in text:
-              raise SystemExit("availability normalization block not found")
+              raise SystemExit("availability normalization anchor not found")
           availability.write_text(text.replace(old, new, 1))
           PY
 
