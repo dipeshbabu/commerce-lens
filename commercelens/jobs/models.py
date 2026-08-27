@@ -184,6 +184,7 @@ class MonitoringJob(BaseModel):
     id: str = Field(default_factory=lambda: f"job_{uuid4().hex[:16]}")
     name: str
     config: MonitorConfig
+    monitor_id: str | None = None
     schedule_kind: ScheduleKind = ScheduleKind.interval
     interval_minutes: int = Field(default=360, ge=1)
     status: JobStatus = JobStatus.active
@@ -203,6 +204,7 @@ class MonitoringJob(BaseModel):
 class MonitoringJobCreate(BaseModel):
     name: str
     config: MonitorConfig
+    monitor_id: str | None = None
     schedule_kind: ScheduleKind = ScheduleKind.interval
     interval_minutes: int = Field(default=360, ge=1)
     owner: str | None = None
@@ -216,6 +218,7 @@ class MonitoringJobCreate(BaseModel):
 class MonitoringJobUpdate(BaseModel):
     name: str | None = None
     config: MonitorConfig | None = None
+    monitor_id: str | None = None
     schedule_kind: ScheduleKind | None = None
     interval_minutes: int | None = Field(default=None, ge=1)
     status: JobStatus | None = None

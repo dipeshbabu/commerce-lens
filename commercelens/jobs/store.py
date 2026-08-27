@@ -122,6 +122,10 @@ class JobStore:
             self._ensure_column(conn, "monitoring_jobs", "account_id", "TEXT")
             self._ensure_column(conn, "monitoring_jobs", "project_id", "TEXT")
             self._ensure_column(conn, "monitoring_jobs", "owner", "TEXT")
+            self._ensure_column(conn, "monitoring_jobs", "monitor_id", "TEXT")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_jobs_monitor_id ON monitoring_jobs(monitor_id)"
+            )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_jobs_status_next_run ON monitoring_jobs(status, next_run_at)"
             )
@@ -401,7 +405,32 @@ class JobStore:
     def create_job(self, request: MonitoringJobCreate) -> MonitoringJob:
         job = MonitoringJob(**request.model_dump())
         job.next_run_at = self.compute_next_run(job)
+        domain_repo = None
+        monitor = None
+        if job.account_id and job.project_id:
+            from commercelens.domain.repository import domain_repository_for_store
+            from commercelens.domain.service import bind_monitor_to_job, monitor_from_job_create
+
+            domain_repo = domain_repository_for_store(self)
+            if job.monitor_id:
+                monitor = domain_repo.get_monitor(
+                    job.monitor_id, account_id=job.account_id, project_id=job.project_id
+                )
+                if monitor is None:
+                    raise ValueError(f"Monitor not found: {job.monitor_id}")
+                job.name = monitor.name
+                job.config = monitor.config
+                job.schedule_kind = ScheduleKind(monitor.schedule_kind)
+                job.interval_minutes = monitor.interval_minutes
+                job.tags = list(monitor.tags)
+            else:
+                monitor = monitor_from_job_create(request)
+                if monitor is not None:
+                    monitor = domain_repo.save_monitor(monitor)
+                    job.monitor_id = monitor.id
         self.save_job(job)
+        if domain_repo is not None and monitor is not None:
+            bind_monitor_to_job(domain_repo, monitor, job)
         self.record_usage(
             UsageEvent(
                 metric=UsageMetric.api_request,
@@ -485,9 +514,9 @@ class JobStore:
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT INTO monitoring_jobs (id, payload, status, next_run_at, updated_at, account_id, project_id, owner)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, status=excluded.status, next_run_at=excluded.next_run_at, updated_at=excluded.updated_at, account_id=excluded.account_id, project_id=excluded.project_id, owner=excluded.owner
+                INSERT INTO monitoring_jobs (id, payload, status, next_run_at, updated_at, account_id, project_id, owner, monitor_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, status=excluded.status, next_run_at=excluded.next_run_at, updated_at=excluded.updated_at, account_id=excluded.account_id, project_id=excluded.project_id, owner=excluded.owner, monitor_id=excluded.monitor_id
                 """,
                 (
                     job.id,
@@ -498,6 +527,7 @@ class JobStore:
                     job.account_id,
                     job.project_id,
                     job.owner,
+                    job.monitor_id,
                 ),
             )
         return job
@@ -550,7 +580,17 @@ class JobStore:
             job.next_run_at = self.compute_next_run(job)
         if job.status != JobStatus.active:
             job.next_run_at = None
-        return self.save_job(job)
+        saved = self.save_job(job)
+        if saved.account_id and saved.project_id:
+            from commercelens.domain.repository import domain_repository_for_store
+            from commercelens.domain.service import sync_monitor_from_job
+
+            domain_repo = domain_repository_for_store(self)
+            monitor = sync_monitor_from_job(domain_repo, saved)
+            if monitor is not None and saved.monitor_id != monitor.id:
+                saved.monitor_id = monitor.id
+                self.save_job(saved)
+        return saved
 
     def delete_job(
         self, job_id: str, account_id: str | None = None, project_id: str | None = None

@@ -184,6 +184,77 @@ POSTGRES_MIGRATIONS: tuple[PostgresMigration, ...] = (
             """,
         ),
     ),
+    PostgresMigration(
+        id="0003_commerce_domain",
+        description="Add first-class commerce domain records and monitoring job bindings.",
+        statements=(
+            "ALTER TABLE monitoring_jobs ADD COLUMN IF NOT EXISTS monitor_id TEXT",
+            "CREATE INDEX IF NOT EXISTS idx_jobs_monitor_id ON monitoring_jobs(monitor_id)",
+            """
+            CREATE TABLE IF NOT EXISTS commerce_sources (
+                id TEXT PRIMARY KEY, payload JSONB NOT NULL, account_id TEXT NOT NULL,
+                project_id TEXT NOT NULL, domain TEXT NOT NULL, updated_at TIMESTAMPTZ NOT NULL
+            )
+            """,
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_commerce_sources_tenant_domain ON commerce_sources(account_id, project_id, domain)",
+            """
+            CREATE TABLE IF NOT EXISTS commerce_products (
+                id TEXT PRIMARY KEY, payload JSONB NOT NULL, account_id TEXT NOT NULL,
+                project_id TEXT NOT NULL, identity_key TEXT, updated_at TIMESTAMPTZ NOT NULL
+            )
+            """,
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_commerce_products_identity ON commerce_products(account_id, project_id, identity_key) WHERE identity_key IS NOT NULL",
+            "CREATE INDEX IF NOT EXISTS idx_commerce_products_tenant ON commerce_products(account_id, project_id, updated_at)",
+            """
+            CREATE TABLE IF NOT EXISTS commerce_offers (
+                id TEXT PRIMARY KEY, payload JSONB NOT NULL, account_id TEXT NOT NULL,
+                project_id TEXT NOT NULL, product_id TEXT NOT NULL, source_id TEXT NOT NULL,
+                url TEXT NOT NULL, updated_at TIMESTAMPTZ NOT NULL
+            )
+            """,
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_commerce_offers_source_url ON commerce_offers(account_id, project_id, source_id, url)",
+            "CREATE INDEX IF NOT EXISTS idx_commerce_offers_product ON commerce_offers(account_id, project_id, product_id)",
+            """
+            CREATE TABLE IF NOT EXISTS commerce_monitors (
+                id TEXT PRIMARY KEY, payload JSONB NOT NULL, account_id TEXT NOT NULL,
+                project_id TEXT NOT NULL, job_id TEXT, status TEXT NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_commerce_monitors_tenant ON commerce_monitors(account_id, project_id, updated_at)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_commerce_monitors_job ON commerce_monitors(account_id, project_id, job_id) WHERE job_id IS NOT NULL",
+            """
+            CREATE TABLE IF NOT EXISTS commerce_observations (
+                id TEXT PRIMARY KEY, payload JSONB NOT NULL, account_id TEXT NOT NULL,
+                project_id TEXT NOT NULL, source_id TEXT NOT NULL, product_id TEXT NOT NULL,
+                offer_id TEXT NOT NULL, monitor_id TEXT, job_id TEXT, run_id TEXT,
+                captured_at TIMESTAMPTZ NOT NULL
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_commerce_observations_offer_time ON commerce_observations(account_id, project_id, offer_id, captured_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_commerce_observations_product_time ON commerce_observations(account_id, project_id, product_id, captured_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_commerce_observations_monitor_time ON commerce_observations(account_id, project_id, monitor_id, captured_at DESC)",
+            """
+            CREATE TABLE IF NOT EXISTS commerce_change_events (
+                id TEXT PRIMARY KEY, payload JSONB NOT NULL, account_id TEXT NOT NULL,
+                project_id TEXT NOT NULL, product_id TEXT NOT NULL, offer_id TEXT NOT NULL,
+                monitor_id TEXT, event_type TEXT NOT NULL, changed_at TIMESTAMPTZ NOT NULL,
+                dedupe_key TEXT NOT NULL
+            )
+            """,
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_commerce_change_dedupe ON commerce_change_events(account_id, project_id, dedupe_key)",
+            "CREATE INDEX IF NOT EXISTS idx_commerce_change_feed ON commerce_change_events(account_id, project_id, changed_at DESC)",
+            """
+            CREATE TABLE IF NOT EXISTS commerce_product_matches (
+                id TEXT PRIMARY KEY, payload JSONB NOT NULL, account_id TEXT NOT NULL,
+                project_id TEXT NOT NULL, left_product_id TEXT NOT NULL,
+                right_product_id TEXT NOT NULL, status TEXT NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL
+            )
+            """,
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_commerce_product_match_pair ON commerce_product_matches(account_id, project_id, left_product_id, right_product_id)",
+        ),
+    ),
 )
 
 

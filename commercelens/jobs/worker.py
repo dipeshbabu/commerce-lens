@@ -9,6 +9,8 @@ from typing import Any
 from urllib.parse import urlparse
 
 from commercelens.alerts.runner import run_monitor_config
+from commercelens.domain.repository import domain_repository_for_store
+from commercelens.domain.service import effective_job_config, make_job_result_sink
 from commercelens.jobs.models import JobRun, WorkerTickResult
 from commercelens.jobs.store import JobStore
 
@@ -18,6 +20,7 @@ class MonitoringWorker:
         self, store: Any | None = None, store_path: str | Path = "commercelens_jobs.db"
     ) -> None:
         self.store = store or JobStore(store_path)
+        self.domain_repo = domain_repository_for_store(self.store)
 
     def tick(
         self,
@@ -58,6 +61,7 @@ class MonitoringWorker:
                     active=active,
                     active_domains=active_domains,
                     executor=executor,
+                    domain_repo=self.domain_repo,
                     worker_concurrency=worker_concurrency,
                     domain_concurrency=domain_concurrency,
                     dry_run=dry_run,
@@ -126,8 +130,13 @@ def run_job_now(store: Any, job_id: str, dry_run: bool = False, deliver: bool = 
     if not job:
         raise ValueError(f"Job not found: {job_id}")
     run = store.mark_job_run_started(job)
+    domain_repo = domain_repository_for_store(store)
+    config = effective_job_config(domain_repo, job)
+    result_sink = make_job_result_sink(domain_repo, job, run)
     try:
-        monitor_result = run_monitor_config(job.config, dry_run=dry_run, deliver=deliver)
+        monitor_result = run_monitor_config(
+            config, dry_run=dry_run, deliver=deliver, on_result=result_sink
+        )
         delivery_count = sum(len(report.results) for report in monitor_result.delivery_reports)
         return store.complete_run(
             run,
@@ -185,6 +194,7 @@ def _submit_available_runs(
     active: dict[Future[Any], tuple[Any, JobRun, set[str]]],
     active_domains: dict[str, int],
     executor: ThreadPoolExecutor,
+    domain_repo: Any,
     worker_concurrency: int,
     domain_concurrency: int | None,
     dry_run: bool,
@@ -204,11 +214,14 @@ def _submit_available_runs(
 
         for domain in domains:
             active_domains[domain] = active_domains.get(domain, 0) + 1
+        config = effective_job_config(domain_repo, job)
+        result_sink = make_job_result_sink(domain_repo, job, run)
         future = executor.submit(
             run_monitor_config,
-            job.config,
+            config,
             dry_run=dry_run,
             deliver=deliver,
+            on_result=result_sink,
         )
         active[future] = (job, run, domains)
         result.started_runs += 1
