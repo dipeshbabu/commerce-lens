@@ -4,12 +4,17 @@ import os
 from uuid import uuid4
 
 import pytest
+from fastapi.testclient import TestClient
 
 from commercelens.alerts.config import MonitorConfig, MonitorTarget
 from commercelens.alerts.rules import AlertCondition, AlertRule
+from commercelens.api.main import app
+from commercelens.api.portal_auth import CSRF_COOKIE_NAME, LOGIN_CSRF_COOKIE_NAME
 from commercelens.jobs.models import (
     AccountCreate,
+    AccountStatus,
     ApiKeyCreate,
+    JobStatus,
     MonitoringJobCreate,
     ProjectCreate,
     RunStatus,
@@ -92,6 +97,78 @@ def test_postgres_migrations_and_tenant_store_round_trip() -> None:
         assert completed.status == RunStatus.succeeded
         assert store.get_run(run.id, account_id=account.id) is not None
         assert store.get_run(run.id, account_id="acct_other") is None
+    finally:
+        with psycopg.connect(POSTGRES_DSN, autocommit=True) as connection:
+            connection.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema)))
+
+
+def test_postgres_portal_monitor_management_round_trip(monkeypatch) -> None:
+    import psycopg
+    from psycopg import sql
+
+    assert POSTGRES_DSN is not None
+    schema = f"cl_portal_{uuid4().hex}"
+    with psycopg.connect(POSTGRES_DSN, autocommit=True) as connection:
+        connection.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
+
+    separator = "&" if "?" in POSTGRES_DSN else "?"
+    scoped_dsn = f"{POSTGRES_DSN}{separator}options=-csearch_path%3D{schema}"
+    try:
+        store = PostgresJobStore(scoped_dsn)
+        assert store.migrate() == []
+        account = store.create_account(
+            AccountCreate(name="Portal Account", status=AccountStatus.active)
+        )
+        project = store.create_project(account.id, ProjectCreate(name="Portal Project"))
+        key = store.create_api_key(
+            ApiKeyCreate(
+                name="Portal key",
+                account_id=account.id,
+                project_id=project.id,
+                scopes=["*"],
+            )
+        )
+        job = store.create_job(
+            MonitoringJobCreate(
+                name="Portal monitor",
+                config=MonitorConfig(
+                    targets=[MonitorTarget(url="https://example.com/portal-product")]
+                ),
+                account_id=account.id,
+                project_id=project.id,
+            )
+        )
+
+        monkeypatch.setenv("COMMERCELENS_STORE_BACKEND", "postgres")
+        monkeypatch.setenv("COMMERCELENS_DATABASE_URL", scoped_dsn)
+        client = TestClient(app, base_url="https://testserver")
+        login_page = client.get("/portal/login")
+        login_csrf = login_page.cookies[LOGIN_CSRF_COOKIE_NAME]
+        login = client.post(
+            "/portal/login",
+            data={"api_key": key.token, "csrf_token": login_csrf},
+            follow_redirects=False,
+        )
+        assert login.status_code == 303
+        csrf = client.cookies[CSRF_COOKIE_NAME]
+
+        paused = client.post(
+            f"/portal/manage/jobs/{job.id}/pause",
+            data={"csrf_token": csrf, "project_id": project.id},
+            follow_redirects=False,
+        )
+        assert paused.status_code == 303
+
+        reloaded = PostgresJobStore(scoped_dsn)
+        assert reloaded.get_job(job.id, account_id=account.id, project_id=project.id).status == (
+            JobStatus.paused
+        )
+        audited_project = reloaded.get_project(project.id, account_id=account.id)
+        assert audited_project is not None
+        assert any(
+            event.get("operation") == "portal_monitor_pause"
+            for event in audited_project.metadata.get("portal_audit_events", [])
+        )
     finally:
         with psycopg.connect(POSTGRES_DSN, autocommit=True) as connection:
             connection.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema)))

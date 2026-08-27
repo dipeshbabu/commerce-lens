@@ -71,35 +71,79 @@ def portal_shell(title: str, content: str, csrf_token: str = "") -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{escape_html(title)} - CommerceLens</title>
   <style>
-    body {{ margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; color: #18212f; background: #f7f8fa; }}
-    header {{ background: #0f172a; color: white; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }}
-    header a {{ color: #bfdbfe; text-decoration: none; margin-left: 16px; }}
-    header nav {{ display: flex; gap: 12px; align-items: center; }}
-    .session-action {{ display: inline; margin: 0; }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; color: #18212f; background: #f7f8fa; line-height: 1.45; }}
+    header {{ background: #0f172a; color: white; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; gap: 18px; }}
+    header a {{ color: #bfdbfe; text-decoration: none; }}
+    header a:hover, header a:focus-visible {{ color: white; text-decoration: underline; }}
+    header nav {{ display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }}
+    .session-action {{ display: inline; margin: 0; padding: 0; border: 0; background: transparent; }}
     .session-action button {{ border: 0; background: transparent; color: #bfdbfe; padding: 0; cursor: pointer; font: inherit; }}
+    .session-action button:hover, .session-action button:focus-visible {{ color: white; text-decoration: underline; }}
     .session-action input {{ display: none; }}
     main {{ max-width: 1200px; margin: 0 auto; padding: 24px; }}
-    h1 {{ font-size: 26px; margin: 0 0 18px; }}
-    h2 {{ font-size: 17px; margin: 26px 0 10px; }}
+    h1 {{ font-size: 26px; margin: 0 0 8px; }}
+    h2 {{ font-size: 18px; margin: 0 0 10px; }}
+    p {{ margin: 8px 0; }}
+    .page-heading {{ display: flex; align-items: start; justify-content: space-between; gap: 18px; margin-bottom: 18px; }}
     .grid {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }}
     .metric {{ background: white; border: 1px solid #dfe4ea; border-radius: 8px; padding: 14px; }}
     .metric strong {{ display: block; font-size: 24px; margin-top: 6px; }}
-    .panel {{ background: white; border: 1px solid #dfe4ea; border-radius: 8px; padding: 16px; margin-top: 16px; }}
+    .panel {{ background: white; border: 1px solid #dfe4ea; border-radius: 10px; padding: 18px; margin-top: 16px; overflow-x: auto; }}
     table {{ width: 100%; border-collapse: collapse; background: white; border: 1px solid #dfe4ea; border-radius: 8px; overflow: hidden; }}
     th, td {{ padding: 10px 12px; border-bottom: 1px solid #e6eaf0; text-align: left; vertical-align: top; font-size: 14px; }}
     th {{ background: #f1f5f9; color: #475569; font-weight: 600; }}
     tr:last-child td {{ border-bottom: 0; }}
-    code {{ background: #eef2ff; padding: 2px 5px; border-radius: 4px; }}
+    code {{ background: #eef2ff; padding: 2px 5px; border-radius: 4px; overflow-wrap: anywhere; }}
+    pre {{ white-space: pre-wrap; overflow-wrap: anywhere; }}
     .muted {{ color: #64748b; }}
     .danger {{ color: #b91c1c; }}
-    @media (max-width: 900px) {{ .grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} main {{ padding: 16px; }} }}
-    @media (max-width: 560px) {{ .grid {{ grid-template-columns: 1fr; }} th, td {{ font-size: 13px; }} }}
+    .help {{ color: #64748b; font-size: 12px; font-weight: 400; }}
+    .form-grid {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 14px; }}
+    .form-grid.compact {{ grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto; align-items: end; }}
+    .form-grid label, .inline-form label {{ display: grid; gap: 6px; color: #334155; font-size: 13px; font-weight: 600; }}
+    .form-grid input, .form-grid select, .form-grid textarea, .inline-form input, .inline-form select {{
+      width: 100%; font: inherit; padding: 10px 11px; border: 1px solid #cbd5e1; border-radius: 7px; background: white; color: #18212f;
+    }}
+    .form-grid textarea {{ resize: vertical; min-height: 92px; }}
+    .form-grid fieldset {{ border: 1px solid #dfe4ea; border-radius: 8px; padding: 14px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }}
+    .form-grid legend {{ padding: 0 6px; font-weight: 700; }}
+    .span-2 {{ grid-column: 1 / -1; }}
+    button, .button-link {{ font: inherit; padding: 9px 12px; border: 1px solid #0f172a; border-radius: 7px; background: white; color: #0f172a; cursor: pointer; text-decoration: none; display: inline-block; }}
+    button:hover, button:focus-visible, .button-link:hover, .button-link:focus-visible {{ background: #f1f5f9; }}
+    button.primary, .primary {{ background: #0f172a; color: white; }}
+    button.primary:hover, button.primary:focus-visible {{ background: #1e293b; }}
+    .danger-button {{ color: #b91c1c; border-color: #fecaca; }}
+    .danger-button:hover, .danger-button:focus-visible {{ background: #fef2f2; }}
+    .inline-form {{ display: flex; gap: 10px; align-items: end; flex-wrap: wrap; }}
+    .inline-form label {{ min-width: min(420px, 100%); flex: 1; }}
+    .table-actions, .action-row {{ display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }}
+    .action-form {{ display: inline; margin: 0; padding: 0; border: 0; background: transparent; }}
+    .action-form input {{ display: none; }}
+    .action-form button {{ padding: 5px 8px; font-size: 12px; }}
+    .notice {{ border-radius: 8px; padding: 12px 14px; margin: 14px 0; border: 1px solid; }}
+    .notice ul {{ margin: 8px 0 0; padding-left: 20px; }}
+    .notice.error {{ color: #991b1b; border-color: #fecaca; background: #fef2f2; }}
+    .notice.success {{ color: #166534; border-color: #bbf7d0; background: #f0fdf4; }}
+    .notice.warning {{ color: #854d0e; border-color: #fde68a; background: #fffbeb; }}
+    @media (max-width: 900px) {{
+      .grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+      main {{ padding: 16px; }}
+      header {{ align-items: flex-start; flex-direction: column; }}
+      .page-heading {{ flex-direction: column; }}
+    }}
+    @media (max-width: 640px) {{
+      .grid, .form-grid, .form-grid.compact, .form-grid fieldset {{ grid-template-columns: 1fr; }}
+      .span-2 {{ grid-column: auto; }}
+      th, td {{ font-size: 13px; }}
+      main {{ padding: 14px; }}
+    }}
   </style>
 </head>
 <body>
   <header>
     <div><strong>CommerceLens</strong> <span class="muted">customer portal</span></div>
-    <nav><a href="/portal">Overview</a><a href="/docs">API Docs</a>{session_actions}</nav>
+    <nav><a href="/portal">Overview</a><a href="/portal/manage">Manage monitors</a><a href="/docs">API Docs</a>{session_actions}</nav>
   </header>
   <main>{content}</main>
 </body>
