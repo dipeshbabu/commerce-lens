@@ -18,7 +18,9 @@ jobs:
         with:
           python-version: "3.12"
       - name: Apply insight integration patches
-        run: python scripts/issue22_patch.py
+        run: |
+          python scripts/issue22_patch.py
+          python scripts/issue22_patch_fix.py
       - name: Apply repository formatting
         run: |
           python -m pip install ruff
