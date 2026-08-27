@@ -17,6 +17,7 @@ def test_matching_evaluation_is_deterministic_and_high_precision() -> None:
     assert report.case_count == 31
     assert report.positive_count == 12
     assert report.negative_count == 19
+    assert report.selected_threshold == DEFAULT_MATCH_THRESHOLD
     assert report.selected.precision >= 0.95
     assert report.selected.recall >= 0.95
     assert report.selected.f1 >= 0.95

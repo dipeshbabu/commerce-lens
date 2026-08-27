@@ -45,7 +45,7 @@ from commercelens.jobs.worker import MonitoringWorker, run_job_now
 from commercelens.intelligence.price_summary import summarize_prices
 from commercelens.matching.catalog_diff import diff_catalogs
 from commercelens.matching.identity import build_identity_graph
-from commercelens.matching.products import match_products
+from commercelens.matching.products import DEFAULT_MATCH_THRESHOLD, match_products
 from commercelens.ops.preflight import run_production_preflight
 from commercelens.quality.benchmarks import build_quality_report, run_benchmark_suite
 from commercelens.storage.exporters import write_csv, write_jsonl
@@ -643,7 +643,7 @@ def load_records(
 def match_records(
     left: Path = typer.Argument(...),
     right: Path = typer.Argument(...),
-    threshold: float = typer.Option(0.72, "--threshold"),
+    threshold: float = typer.Option(DEFAULT_MATCH_THRESHOLD, "--threshold"),
     top_k: int = typer.Option(1, "--top-k", min=1, max=10),
     out: Path | None = typer.Option(None, "--out", "-o"),
 ) -> None:
@@ -663,7 +663,7 @@ def match_records(
 @app.command("identity-graph")
 def identity_graph(
     records: Path = typer.Argument(...),
-    threshold: float = typer.Option(0.72, "--threshold"),
+    threshold: float = typer.Option(DEFAULT_MATCH_THRESHOLD, "--threshold"),
     out: Path | None = typer.Option(None, "--out", "-o"),
 ) -> None:
     """Build canonical product identity clusters from one product dataset."""

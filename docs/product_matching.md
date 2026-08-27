@@ -52,7 +52,7 @@ This makes pairs such as `128GB` versus `256GB`, `1 pack` versus `3 pack`, or ca
 
 ## Customer corrections
 
-The customer portal exposes product match review at `/portal/matches` for signed-in users. A key with `match:write` can:
+The customer portal exposes product match review at `/portal/matches` for signed-in users. A key with `jobs:write` can:
 
 - confirm a proposed match
 - reject an incorrect match

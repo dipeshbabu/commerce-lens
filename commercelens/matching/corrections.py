@@ -57,9 +57,10 @@ def replace_product_match(
     anchor_product_id = current.left_product_id
     if replacement_product_id in {anchor_product_id, current.right_product_id}:
         raise ValueError("Choose a different replacement product.")
-    if repo.get_product(
-        replacement_product_id, account_id=account_id, project_id=project_id
-    ) is None:
+    if (
+        repo.get_product(replacement_product_id, account_id=account_id, project_id=project_id)
+        is None
+    ):
         raise ValueError("Replacement product not found.")
 
     _append_correction(

@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from commercelens.connectors.datasets import ProductRecord
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
-DEFAULT_MATCH_THRESHOLD = 0.72
+DEFAULT_MATCH_THRESHOLD = 0.65
 _VARIANT_KEYS = ("model", "storage", "memory", "capacity", "size", "color", "gender", "variant")
 _BUNDLE_KEYS = ("bundle_quantity", "bundle")
 

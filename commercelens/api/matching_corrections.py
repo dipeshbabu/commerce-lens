@@ -17,7 +17,11 @@ from commercelens.api.portal_management_core import (
 from commercelens.api.presentation import escape_html as esc, table
 from commercelens.api.quota import require_scope
 from commercelens.domain.repository import domain_repository_for_store
-from commercelens.matching.corrections import correct_product_match, replace_product_match
+from commercelens.matching.corrections import (
+    MatchDecision,
+    correct_product_match,
+    replace_product_match,
+)
 
 router = APIRouter()
 
@@ -40,7 +44,7 @@ def _correction_text(match: Any) -> str:
 
 def _can_write(context: Any) -> bool:
     scopes = set(context.key.scopes)
-    return "*" in scopes or "match:write" in scopes
+    return "*" in scopes or "jobs:write" in scopes
 
 
 @router.get("/portal/matches", response_class=HTMLResponse)
@@ -95,8 +99,14 @@ def portal_product_matches(
         rows.append(
             [
                 f"<code>{esc(match.id)}</code>",
-                esc(_product_label(product_by_id.get(match.left_product_id), match.left_product_id)),
-                esc(_product_label(product_by_id.get(match.right_product_id), match.right_product_id)),
+                esc(
+                    _product_label(product_by_id.get(match.left_product_id), match.left_product_id)
+                ),
+                esc(
+                    _product_label(
+                        product_by_id.get(match.right_product_id), match.right_product_id
+                    )
+                ),
                 esc(f"{match.confidence:.3f}"),
                 esc(match.status.value),
                 esc(match.method or "—"),
@@ -120,7 +130,7 @@ def portal_product_matches(
 
     warning = ""
     if not can_write:
-        warning = '<section class="notice warning" role="status">This key can review product matches but needs <code>match:write</code> to correct them.</section>'
+        warning = '<section class="notice warning" role="status">This key can review product matches but needs <code>jobs:write</code> to correct them.</section>'
     empty = (
         '<section class="notice warning" role="status">No product matches have been proposed for this project yet.</section>'
         if not matches
@@ -144,11 +154,11 @@ def portal_product_matches(
 async def _correct(
     request: Request,
     match_id: str,
-    action: str,
+    action: MatchDecision,
     store: Any,
 ) -> RedirectResponse:
     context = require_portal_session(request, store)
-    require_scope(context.key, "match:write")
+    require_scope(context.key, "jobs:write")
     form = await _form(request)
     require_portal_csrf(store, context, form.get("csrf_token"))
     selected = _select_project(store, context, form.get("project_id"))
@@ -161,7 +171,7 @@ async def _correct(
             account_id=context.key.account_id or "",
             project_id=selected.id,
             match_id=match_id,
-            action=action,  # type: ignore[arg-type]
+            action=action,
             actor=context.key.owner or context.key.id,
             note=form.get("note") or None,
         )
@@ -191,7 +201,7 @@ async def portal_replace_match(
     request: Request, match_id: str, store: Any = Depends(get_job_store)
 ) -> RedirectResponse:
     context = require_portal_session(request, store)
-    require_scope(context.key, "match:write")
+    require_scope(context.key, "jobs:write")
     form = await _form(request)
     require_portal_csrf(store, context, form.get("csrf_token"))
     selected = _select_project(store, context, form.get("project_id"))
