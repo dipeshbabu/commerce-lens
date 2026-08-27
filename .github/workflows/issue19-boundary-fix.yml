@@ -27,13 +27,14 @@ jobs:
           ruff format --check .
           mypy commercelens
           pytest tests/test_domain_models.py tests/test_domain_api.py tests/test_domain_extraction_api.py -q
+          python -c 'from commercelens.jobs import MonitoringWorker, run_job_now; assert MonitoringWorker and run_job_now'
       - name: Commit boundary fix
         run: |
-          if git diff --quiet commercelens/domain/repository.py; then
+          if git diff --quiet commercelens/domain/repository.py commercelens/jobs/__init__.py; then
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add commercelens/domain/repository.py
+          git add commercelens/domain/repository.py commercelens/jobs/__init__.py
           git commit -m "Fix domain repository import boundary"
           git push origin HEAD:issue-19-domain-models
