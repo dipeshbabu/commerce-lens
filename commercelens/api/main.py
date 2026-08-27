@@ -260,7 +260,7 @@ def _record_extraction(
     context = _usage_context(key)
     metadata = metadata or {}
     failure_class = classify_failure(error, confidence=confidence, metadata=metadata)
-    return store.record_extraction(
+    record = store.record_extraction(
         ExtractionCreate(
             kind=kind,
             status=status,
@@ -278,6 +278,28 @@ def _record_extraction(
             metadata=metadata,
         )
     )
+    if (
+        kind == ExtractionKind.product
+        and status == ExtractionStatus.succeeded
+        and payload
+        and context["account_id"]
+        and context["project_id"]
+    ):
+        try:
+            from commercelens.domain.repository import domain_repository_for_store
+            from commercelens.domain.service import ingest_product_extraction
+
+            ingest_product_extraction(
+                domain_repository_for_store(store),
+                ProductExtractionResult.model_validate(payload),
+                account_id=str(context["account_id"]),
+                project_id=str(context["project_id"]),
+                extraction_id=record.id,
+                provenance={"capture_path": "api_product_extraction", **metadata},
+            )
+        except Exception:
+            LOGGER.exception("commerce_domain_ingest_failed", extra={"extraction_id": record.id})
+    return record
 
 
 def _meter(

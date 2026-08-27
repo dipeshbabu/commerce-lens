@@ -157,13 +157,9 @@ def delete_source_endpoint(
 ) -> dict[str, bool]:
     require_scope(key, "extract:write")
     account_id, project_id = _tenant(key)
-    if repo.list_offers(
-        account_id=account_id, project_id=project_id, source_id=source_id, limit=1
-    ):
+    if repo.list_offers(account_id=account_id, project_id=project_id, source_id=source_id, limit=1):
         raise HTTPException(status_code=409, detail="Delete or move this source's offers first.")
-    deleted = repo.delete_record(
-        "source", source_id, account_id=account_id, project_id=project_id
-    )
+    deleted = repo.delete_record("source", source_id, account_id=account_id, project_id=project_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Source not found.")
     return {"deleted": True}
@@ -339,7 +335,7 @@ def delete_offer_endpoint(
     return {"deleted": True}
 
 
-@router.post("/v1/domain-monitors", response_model=MonitorRecord)
+@router.post("/v1/monitors", response_model=MonitorRecord)
 def create_monitor_endpoint(
     request: MonitorCreate,
     repo: Any = Depends(_repo),
@@ -352,7 +348,7 @@ def create_monitor_endpoint(
     )
 
 
-@router.get("/v1/domain-monitors", response_model=list[MonitorRecord])
+@router.get("/v1/monitors", response_model=list[MonitorRecord])
 def list_monitors_endpoint(
     limit: int = 100,
     repo: Any = Depends(_repo),
@@ -363,7 +359,7 @@ def list_monitors_endpoint(
     return repo.list_monitors(account_id=account_id, project_id=project_id, limit=limit)
 
 
-@router.get("/v1/domain-monitors/{monitor_id}", response_model=MonitorRecord)
+@router.get("/v1/monitors/{monitor_id}", response_model=MonitorRecord)
 def get_monitor_endpoint(
     monitor_id: str,
     repo: Any = Depends(_repo),
@@ -377,7 +373,7 @@ def get_monitor_endpoint(
     return record
 
 
-@router.patch("/v1/domain-monitors/{monitor_id}", response_model=MonitorRecord)
+@router.patch("/v1/monitors/{monitor_id}", response_model=MonitorRecord)
 def update_monitor_endpoint(
     monitor_id: str,
     request: MonitorUpdate,
@@ -400,7 +396,7 @@ def update_monitor_endpoint(
     return repo.save_monitor(record)
 
 
-@router.delete("/v1/domain-monitors/{monitor_id}")
+@router.delete("/v1/monitors/{monitor_id}")
 def delete_monitor_endpoint(
     monitor_id: str,
     repo: Any = Depends(_repo),
@@ -445,9 +441,7 @@ def get_observation_endpoint(
 ) -> ObservationRecord:
     require_scope(key, "extractions:read")
     account_id, project_id = _tenant(key)
-    record = repo.get_observation(
-        observation_id, account_id=account_id, project_id=project_id
-    )
+    record = repo.get_observation(observation_id, account_id=account_id, project_id=project_id)
     if not record:
         raise HTTPException(status_code=404, detail="Observation not found.")
     return record
@@ -501,9 +495,9 @@ def create_product_match_endpoint(
     if request.left_product_id == request.right_product_id:
         raise HTTPException(status_code=422, detail="A product cannot be matched to itself.")
     left, right = sorted((request.left_product_id, request.right_product_id))
-    if not repo.get_product(left, account_id=account_id, project_id=project_id) or not repo.get_product(
-        right, account_id=account_id, project_id=project_id
-    ):
+    if not repo.get_product(
+        left, account_id=account_id, project_id=project_id
+    ) or not repo.get_product(right, account_id=account_id, project_id=project_id):
         raise HTTPException(status_code=404, detail="One or both products were not found.")
     record = ProductMatchRecord(
         id=_match_id(account_id, project_id, left, right),
@@ -528,6 +522,20 @@ def list_product_matches_endpoint(
     require_scope(key, "jobs:read")
     account_id, project_id = _tenant(key)
     return repo.list_product_matches(account_id=account_id, project_id=project_id, limit=limit)
+
+
+@router.get("/v1/product-matches/{match_id}", response_model=ProductMatchRecord)
+def get_product_match_endpoint(
+    match_id: str,
+    repo: Any = Depends(_repo),
+    key: ApiKeyRecord | None = Depends(require_api_key),
+) -> ProductMatchRecord:
+    require_scope(key, "jobs:read")
+    account_id, project_id = _tenant(key)
+    record = repo.get_product_match(match_id, account_id=account_id, project_id=project_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Product match not found.")
+    return record
 
 
 @router.patch("/v1/product-matches/{match_id}", response_model=ProductMatchRecord)

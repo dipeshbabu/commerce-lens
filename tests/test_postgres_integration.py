@@ -10,6 +10,8 @@ from commercelens.alerts.config import MonitorConfig, MonitorTarget
 from commercelens.alerts.rules import AlertCondition, AlertRule
 from commercelens.api.main import app
 from commercelens.api.portal_auth import CSRF_COOKIE_NAME, LOGIN_CSRF_COOKIE_NAME
+from commercelens.domain.repository import domain_repository_for_store
+from commercelens.domain.service import ingest_product_extraction
 from commercelens.jobs.models import (
     AccountCreate,
     AccountStatus,
@@ -20,6 +22,7 @@ from commercelens.jobs.models import (
     RunStatus,
 )
 from commercelens.jobs.postgres_store import PostgresJobStore
+from commercelens.schemas.product import Availability, Price, Product, ProductExtractionResult
 
 
 POSTGRES_DSN = os.getenv("COMMERCELENS_TEST_POSTGRES_DSN")
@@ -77,6 +80,46 @@ def test_postgres_migrations_and_tenant_store_round_trip() -> None:
                 account_id=account.id,
                 project_id=project.id,
             )
+        )
+        assert job.monitor_id is not None
+        domain_repo = domain_repository_for_store(store)
+        persisted_monitor = domain_repo.get_monitor(
+            job.monitor_id, account_id=account.id, project_id=project.id
+        )
+        assert persisted_monitor is not None
+        assert persisted_monitor.job_id == job.id
+        ingested = ingest_product_extraction(
+            domain_repo,
+            ProductExtractionResult(
+                url="https://example.com/product",
+                product=Product(
+                    name="Integration product",
+                    brand="Example",
+                    price=Price(amount=42.0, currency="USD"),
+                    availability=Availability.IN_STOCK,
+                    source_url="https://example.com/product",
+                    metadata={"gtin": "00012345678905"},
+                ),
+                confidence=0.99,
+            ),
+            account_id=account.id,
+            project_id=project.id,
+            monitor_id=job.monitor_id,
+            job_id=job.id,
+            captured_at="2026-08-26T12:00:00+00:00",
+            provenance={"fixture": "postgres"},
+        )
+        assert (
+            domain_repo.get_observation(
+                ingested.observation.id, account_id=account.id, project_id=project.id
+            )
+            is not None
+        )
+        assert (
+            domain_repo.get_observation(
+                ingested.observation.id, account_id="acct_other", project_id=project.id
+            )
+            is None
         )
         job.next_run_at = "2000-01-01T00:00:00+00:00"
         store.save_job(job)

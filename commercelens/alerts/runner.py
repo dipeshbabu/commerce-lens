@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from pydantic import BaseModel, Field
 
 from commercelens.alerts.config import MonitorConfig, load_monitor_config
@@ -11,7 +13,7 @@ from commercelens.alerts.rules import (
     rule_matches_change,
     snapshot_triggered_threshold,
 )
-from commercelens.core.monitor import monitor_product
+from commercelens.core.monitor import MonitorResult, monitor_product
 
 
 class MonitorRunResult(BaseModel):
@@ -27,6 +29,7 @@ def run_monitor_config(
     config: MonitorConfig,
     dry_run: bool = False,
     deliver: bool = True,
+    on_result: Callable[[MonitorResult], None] | None = None,
 ) -> MonitorRunResult:
     result = MonitorRunResult(checked=len(config.targets))
 
@@ -38,6 +41,8 @@ def run_monitor_config(
                 render=target.render or config.render,
             )
             result.succeeded += 1
+            if on_result is not None:
+                on_result(monitor_result)
         except Exception as exc:  # pragma: no cover - defensive CLI/API path
             result.failed += 1
             result.warnings.append(f"{target.url}: {exc}")

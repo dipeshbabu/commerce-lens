@@ -15,7 +15,7 @@ from commercelens.domain.models import (
     SourceRecord,
 )
 from commercelens.jobs.models import JobRun, MonitoringJob, MonitoringJobCreate
-from commercelens.schemas.product import Price, Product, ProductExtractionResult
+from commercelens.schemas.product import Availability, Price, Product, ProductExtractionResult
 from commercelens.storage.price_store import (
     ProductSnapshot,
     compare_snapshots,
@@ -163,9 +163,7 @@ def ingest_product_extraction(
         json.dumps(raw_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()[:16]
     observation = ObservationRecord(
-        id=_stable_id(
-            "obs", account_id, project_id, offer.id, captured, observation_fingerprint
-        ),
+        id=_stable_id("obs", account_id, project_id, offer.id, captured, observation_fingerprint),
         account_id=account_id,
         project_id=project_id,
         source_id=source.id,
@@ -284,7 +282,7 @@ def _change_severity(event_type: str, availability: str | None) -> str:
 
 
 def monitor_from_job_create(request: MonitoringJobCreate) -> MonitorRecord | None:
-    if not request.account_id or not request.project_id:
+    if request.monitor_id or not request.account_id or not request.project_id:
         return None
     return MonitorRecord(
         account_id=request.account_id,
@@ -324,6 +322,7 @@ def sync_monitor_from_job(repo: Any, job: MonitoringJob) -> MonitorRecord | None
         )
     if monitor is None:
         monitor = MonitorRecord(
+            id=job.monitor_id or _stable_id("mon", job.account_id, job.project_id, job.id),
             account_id=job.account_id,
             project_id=job.project_id,
             job_id=job.id,
@@ -341,9 +340,7 @@ def sync_monitor_from_job(repo: Any, job: MonitoringJob) -> MonitorRecord | None
 def effective_job_config(repo: Any, job: MonitoringJob):
     if not job.monitor_id or not job.account_id or not job.project_id:
         return job.config
-    monitor = repo.get_monitor(
-        job.monitor_id, account_id=job.account_id, project_id=job.project_id
-    )
+    monitor = repo.get_monitor(job.monitor_id, account_id=job.account_id, project_id=job.project_id)
     return monitor.config if monitor else job.config
 
 
@@ -372,7 +369,11 @@ def ingest_monitor_snapshot(
                 name=snapshot.name,
                 brand=snapshot.brand,
                 price=price,
-                availability=snapshot.availability or "unknown",
+                availability=(
+                    Availability(snapshot.availability)
+                    if snapshot.availability
+                    else Availability.UNKNOWN
+                ),
                 canonical_url=snapshot.canonical_url,
                 source_url=snapshot.source_url,
             ),

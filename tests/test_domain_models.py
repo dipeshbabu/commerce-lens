@@ -15,7 +15,9 @@ from commercelens.jobs.store import JobStore
 from commercelens.schemas.product import Availability, Price, Product, ProductExtractionResult
 
 
-def _extraction(url: str, *, amount: float, gtin: str = "00012345678905") -> ProductExtractionResult:
+def _extraction(
+    url: str, *, amount: float, gtin: str = "00012345678905"
+) -> ProductExtractionResult:
     return ProductExtractionResult(
         url=url,
         product=Product(

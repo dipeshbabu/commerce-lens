@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import json
 import os
 import sqlite3
 from pathlib import Path
-from typing import Any, Protocol, TypeVar, cast
+from typing import Any, Protocol, TypeVar
 
 from pydantic import BaseModel
 
@@ -312,7 +311,11 @@ class SQLiteDomainRepository:
         self, source_id: str, *, account_id: str, project_id: str
     ) -> SourceRecord | None:
         return self._get(
-            "commerce_sources", source_id, SourceRecord, account_id=account_id, project_id=project_id
+            "commerce_sources",
+            source_id,
+            SourceRecord,
+            account_id=account_id,
+            project_id=project_id,
         )
 
     def find_source_by_domain(
@@ -404,9 +407,7 @@ class SQLiteDomainRepository:
         )
         return record
 
-    def get_offer(
-        self, offer_id: str, *, account_id: str, project_id: str
-    ) -> OfferRecord | None:
+    def get_offer(self, offer_id: str, *, account_id: str, project_id: str) -> OfferRecord | None:
         return self._get(
             "commerce_offers", offer_id, OfferRecord, account_id=account_id, project_id=project_id
         )
@@ -760,7 +761,11 @@ class PostgresDomainRepository:
         self, source_id: str, *, account_id: str, project_id: str
     ) -> SourceRecord | None:
         return self._get(
-            "commerce_sources", source_id, SourceRecord, account_id=account_id, project_id=project_id
+            "commerce_sources",
+            source_id,
+            SourceRecord,
+            account_id=account_id,
+            project_id=project_id,
         )
 
     def find_source_by_domain(
@@ -852,9 +857,7 @@ class PostgresDomainRepository:
         )
         return record
 
-    def get_offer(
-        self, offer_id: str, *, account_id: str, project_id: str
-    ) -> OfferRecord | None:
+    def get_offer(self, offer_id: str, *, account_id: str, project_id: str) -> OfferRecord | None:
         return self._get(
             "commerce_offers", offer_id, OfferRecord, account_id=account_id, project_id=project_id
         )
