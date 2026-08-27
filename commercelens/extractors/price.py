@@ -17,7 +17,7 @@ CURRENCY_CODES = {"USD", "GBP", "EUR", "JPY", "INR", "AUD", "CAD", "NZD", "CHF",
 PRICE_RE = re.compile(
     r"(?P<code>USD|GBP|EUR|JPY|INR|AUD|CAD|NZD|CHF|CNY)?\s*"
     r"(?P<symbol>[$£€¥₹])?\s*"
-    r"(?P<amount>[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)",
+    r"(?P<amount>(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]{1,2})?)",
     flags=re.IGNORECASE,
 )
 
