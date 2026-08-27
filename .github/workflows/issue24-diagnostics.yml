@@ -1,0 +1,38 @@
+name: Issue 24 diagnostics
+
+on:
+  push:
+    branches: [issue-24-matching-evaluation]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: issue-24-matching-evaluation
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install package
+        run: python -m pip install -e ".[dev]"
+      - name: Print matching evaluation
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from commercelens.matching.evaluation import evaluate_matching_cases, load_matching_cases
+          cases = load_matching_cases(Path("tests/fixtures/matching/evaluation.json"))
+          report = evaluate_matching_cases(cases)
+          print(report.model_dump_json(indent=2))
+          PY
+      - name: Lint
+        run: ruff check commercelens/matching commercelens/api/matching_corrections.py tests/test_matching_evaluation.py tests/test_matching_corrections.py
+      - name: Format check
+        run: ruff format --check commercelens/matching commercelens/api/matching_corrections.py tests/test_matching_evaluation.py tests/test_matching_corrections.py
+      - name: Type check
+        run: mypy commercelens
+      - name: Focused tests
+        run: pytest tests/test_matching_evaluation.py tests/test_matching_corrections.py -q
