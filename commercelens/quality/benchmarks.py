@@ -258,9 +258,7 @@ def run_benchmark_suite(fixture_dir: str | Path) -> BenchmarkSuiteResult:
     )
 
 
-def _accuracy_for_fields(
-    field_accuracy: list[BenchmarkFieldAccuracy], predicate: Any
-) -> float:
+def _accuracy_for_fields(field_accuracy: list[BenchmarkFieldAccuracy], predicate: Any) -> float:
     selected = [item for item in field_accuracy if predicate(item.field)]
     passed = sum(item.passed for item in selected)
     total = sum(item.total for item in selected)
@@ -382,9 +380,11 @@ def build_quality_report(
     ]
     product_field_accuracy = _accuracy_for_fields(
         field_accuracy,
-        lambda field: field.startswith("product.")
-        and ".price." not in field
-        and field != "product.availability",
+        lambda field: (
+            field.startswith("product.")
+            and ".price." not in field
+            and field != "product.availability"
+        ),
     )
     price_accuracy = _accuracy_for_fields(field_accuracy, lambda field: ".price." in field)
     availability_accuracy = _accuracy_for_fields(
@@ -394,25 +394,39 @@ def build_quality_report(
 
     gate_failures: list[str] = []
     checks = [
-        (suite.total_cases >= gate.minimum_cases, f"benchmark cases {suite.total_cases} < {gate.minimum_cases}"),
-        (suite.score >= gate.minimum_score, f"overall score {suite.score:.3f} < {gate.minimum_score:.3f}"),
+        (
+            suite.total_cases >= gate.minimum_cases,
+            f"benchmark cases {suite.total_cases} < {gate.minimum_cases}",
+        ),
+        (
+            suite.score >= gate.minimum_score,
+            f"overall score {suite.score:.3f} < {gate.minimum_score:.3f}",
+        ),
         (
             product_field_accuracy >= gate.minimum_product_field_accuracy,
             f"product field accuracy {product_field_accuracy:.3f} < {gate.minimum_product_field_accuracy:.3f}",
         ),
-        (price_accuracy >= gate.minimum_price_accuracy, f"price accuracy {price_accuracy:.3f} < {gate.minimum_price_accuracy:.3f}"),
+        (
+            price_accuracy >= gate.minimum_price_accuracy,
+            f"price accuracy {price_accuracy:.3f} < {gate.minimum_price_accuracy:.3f}",
+        ),
         (
             availability_accuracy >= gate.minimum_availability_accuracy,
             f"availability accuracy {availability_accuracy:.3f} < {gate.minimum_availability_accuracy:.3f}",
         ),
-        (listing_recall >= gate.minimum_listing_recall, f"listing recall {listing_recall:.3f} < {gate.minimum_listing_recall:.3f}"),
+        (
+            listing_recall >= gate.minimum_listing_recall,
+            f"listing recall {listing_recall:.3f} < {gate.minimum_listing_recall:.3f}",
+        ),
     ]
     gate_failures.extend(message for passed, message in checks if not passed)
 
     recommendations: list[str] = []
     if failing_fields:
         worst_field = max(failing_fields.items(), key=lambda item: item[1])[0]
-        recommendations.append(f"Prioritize extractor work on `{worst_field}`; it has the most failures.")
+        recommendations.append(
+            f"Prioritize extractor work on `{worst_field}`; it has the most failures."
+        )
     if suite.total_cases < gate.minimum_cases:
         recommendations.append(
             f"Expand the benchmark suite to at least {gate.minimum_cases} representative cases."
