@@ -140,11 +140,14 @@ def _run_html_case(
 ) -> BenchmarkCaseResult:
     started = perf_counter()
     if expectation.kind == "product":
-        extracted_model = extract_product_from_html(html, url=expectation.source_url)
+        extracted = extract_product_from_html(html, url=expectation.source_url).model_dump(
+            mode="json"
+        )
     else:
-        extracted_model = extract_listing_from_html(html, url=expectation.source_url)
+        extracted = extract_listing_from_html(html, url=expectation.source_url).model_dump(
+            mode="json"
+        )
     latency_ms = (perf_counter() - started) * 1000
-    extracted = extracted_model.model_dump(mode="json")
 
     failures: dict[str, dict[str, Any]] = {}
     passed_fields = 0
@@ -347,8 +350,8 @@ def build_quality_report(
     if manifest_path.exists():
         raw = json.loads(manifest_path.read_text(encoding="utf-8"))
         for item in raw:
-            case = BenchmarkManifestCase.model_validate(item)
-            expectations[case.name] = case.fields
+            manifest_case = BenchmarkManifestCase.model_validate(item)
+            expectations[manifest_case.name] = manifest_case.fields
 
     for case in suite.cases:
         expected_fields = set(expectations.get(case.name, {}))
