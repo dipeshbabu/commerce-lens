@@ -3,18 +3,19 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from commercelens.connectors.datasets import ProductRecord
+from commercelens.matching.products import DEFAULT_MATCH_THRESHOLD
 
 
 class MatchProductsRequest(BaseModel):
     left: list[ProductRecord] = Field(default_factory=list)
     right: list[ProductRecord] = Field(default_factory=list)
-    threshold: float = 0.72
+    threshold: float = DEFAULT_MATCH_THRESHOLD
     top_k: int = 1
 
 
 class ProductIdentityGraphRequest(BaseModel):
     records: list[ProductRecord] = Field(default_factory=list)
-    threshold: float = 0.72
+    threshold: float = DEFAULT_MATCH_THRESHOLD
 
 
 class CatalogDiffRequest(BaseModel):

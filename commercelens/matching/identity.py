@@ -7,7 +7,11 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, Field
 
 from commercelens.connectors.datasets import ProductRecord
-from commercelens.matching.products import normalize_text, product_similarity
+from commercelens.matching.products import (
+    DEFAULT_MATCH_THRESHOLD,
+    normalize_text,
+    product_similarity,
+)
 
 
 class ProductIdentityEdge(BaseModel):
@@ -53,7 +57,7 @@ class _UnionFind:
 
 def build_identity_graph(
     records: list[ProductRecord],
-    threshold: float = 0.72,
+    threshold: float = DEFAULT_MATCH_THRESHOLD,
 ) -> ProductIdentityGraph:
     union_find = _UnionFind(len(records))
     edges: list[ProductIdentityEdge] = []

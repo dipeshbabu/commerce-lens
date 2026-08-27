@@ -150,7 +150,7 @@ def portal_shell(title: str, content: str, csrf_token: str = "") -> str:
 <body>
   <header>
     <div><strong>CommerceLens</strong> <span class="muted">customer portal</span></div>
-    <nav><a href="/portal">Overview</a><a href="/portal/changes">Changes</a><a href="/portal/products">Products</a><a href="/portal/manage">Manage monitors</a><a href="/docs">API Docs</a>{session_actions}</nav>
+    <nav><a href="/portal">Overview</a><a href="/portal/changes">Changes</a><a href="/portal/products">Products</a><a href="/portal/matches">Matches</a><a href="/portal/manage">Manage monitors</a><a href="/docs">API Docs</a>{session_actions}</nav>
   </header>
   <main>{content}</main>
 </body>
