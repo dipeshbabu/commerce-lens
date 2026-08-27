@@ -3,6 +3,7 @@
 from commercelens.api.customer_insights import router as customer_insights_router
 from commercelens.api.domain import router as domain_router
 from commercelens.api.main import app
+from commercelens.api.matching_corrections import router as matching_corrections_router
 from commercelens.api.portal_management import router as portal_management_router
 
 if not getattr(app.state, "portal_management_installed", False):
@@ -16,5 +17,9 @@ if not getattr(app.state, "commerce_domain_installed", False):
 if not getattr(app.state, "customer_insights_installed", False):
     app.include_router(customer_insights_router)
     app.state.customer_insights_installed = True
+
+if not getattr(app.state, "matching_corrections_installed", False):
+    app.include_router(matching_corrections_router)
+    app.state.matching_corrections_installed = True
 
 __all__ = ["app"]
